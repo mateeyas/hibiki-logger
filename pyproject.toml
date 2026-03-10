@@ -1,0 +1,54 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hibiki-logger"
+dynamic = ["version"]
+description = "Production logging with console, database, and Discord notification support"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+authors = [
+    {name = "Matt", email = "matt@squaredsums.com"}
+]
+keywords = ["logging", "discord", "async", "postgresql", "notifications"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Logging",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+dependencies = [
+    "aiohttp>=3.8.0",
+    "sqlalchemy>=2.0.0",
+    "asyncpg>=0.28.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "black>=23.0",
+    "flake8>=6.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/mateeyas/hibiki-logger"
+Documentation = "https://github.com/mateeyas/hibiki-logger#readme"
+Repository = "https://github.com/mateeyas/hibiki-logger"
+Issues = "https://github.com/mateeyas/hibiki-logger/issues"
+
+[tool.setuptools.dynamic]
+version = {attr = "hibiki_logger.__version__"}
+
+[tool.setuptools.packages.find]
+include = ["hibiki_logger*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "strict"
