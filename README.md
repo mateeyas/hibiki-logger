@@ -119,6 +119,21 @@ logger.error("User creation failed")
 | `async log_to_discord(level, message, logger_name, ...)` | Manually send to Discord.                                                  |
 | `async log_error(error, logger_name, ...)`               | Log an exception with traceback to DB.                                     |
 
+### Manual Discord notifications
+
+Standard logging calls (`logger.error(...)`) send Discord notifications in the background automatically. Your code is never blocked. If you need to send a Discord message explicitly and confirm it was delivered, await `log_to_discord()` directly:
+
+```python
+from hibiki_logger import log_to_discord
+
+await log_to_discord(
+    level="ERROR",
+    message="Payment processing failed",
+    logger_name="myapp.billing",
+    user_id="123",
+)
+```
+
 ## Framework integration
 
 **FastAPI** — call both functions inside your lifespan handler:

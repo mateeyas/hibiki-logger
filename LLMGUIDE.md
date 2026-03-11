@@ -4,7 +4,29 @@
 
 ## What is hibiki-logger?
 
-Hibiki Logger (v1.0.0) is a Python 3.10+ logging library that routes log messages to three destinations: **console**, **PostgreSQL** (or any SQLAlchemy-supported database), and **Discord** (via webhooks). All DB and Discord I/O is async and non-blocking.
+Hibiki Logger (v1.0.1) is a Python 3.10+ logging library that routes log messages to three destinations: **console**, **PostgreSQL** (or any SQLAlchemy-supported database), and **Discord** (via webhooks). All DB and Discord I/O is async and non-blocking.
+
+**Runtime dependencies:** `sqlalchemy>=2.0.0`, `asyncpg>=0.28.0`, `aiohttp>=3.8.0`
+
+## Quick Start
+
+```python
+from hibiki_logger import configure_logging, setup_db_logging, get_logger
+from hibiki_logger.models import create_log_model
+from sqlalchemy.orm import declarative_base
+from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker
+
+Base = declarative_base()
+Log = create_log_model(Base)
+engine = create_async_engine("postgresql+asyncpg://user:pass@localhost/db")
+session_maker = async_sessionmaker(engine, expire_on_commit=False)
+
+configure_logging(namespace="myapp")
+setup_db_logging(session_maker=session_maker, log_model=Log, namespace="myapp")
+
+logger = get_logger("myapp.api")
+logger.info("Ready")
+```
 
 ## Module Map
 
@@ -50,6 +72,7 @@ setup_db_logging(
 - `configure_logging` must be called before `setup_db_logging`.
 - `setup_db_logging` must be called after the database engine and session maker are created.
 - The `namespace` argument must be the same in both calls.
+- `get_logger` is safe to call at module level (before `configure_logging`). It returns a standard `logging.Logger`. DB/Discord handlers may be attached, but no writes happen until `setup_db_logging` has been called.
 
 ## Discord Setup
 
@@ -90,6 +113,12 @@ configure_logging(namespace="myapp", extra_loggers=["uvicorn", "fastapi"])
 | `log_to_db` | `async (level, message, logger_name, user_id?, path?, method?, trace?)` | Manually write a log entry to the database. Respects `LOG_DB_MIN_LEVEL`. |
 | `log_to_discord` | `async (level, message, logger_name, trace?, user_id?, path?, method?)` | Manually send a Discord notification. Respects `LOG_DISCORD_MIN_LEVEL`. |
 | `log_error` | `async (error, logger_name, message?, user_id?, path?, method?)` | Log an exception to DB with auto-extracted traceback. |
+
+### Internal helpers (test use)
+
+| Function | Import Path | Description |
+|----------|-------------|-------------|
+| `reset_db_handler` | `from hibiki_logger.logger import reset_db_handler` | Clear the global DB handler singleton. Call between tests to ensure handler isolation. Takes no arguments. |
 
 ### Models (`from hibiki_logger.models import ...`)
 
@@ -175,7 +204,7 @@ async def lifespan(app: FastAPI):
     yield
 
 app = FastAPI(lifespan=lifespan)
-logger = get_logger("myapp.routes")
+logger = get_logger("myapp.routes")  # safe at module level -- see init rules above
 ```
 
 ### Django
@@ -209,12 +238,60 @@ logger = get_logger("myapp.routes")
 | Using `__name__` as logger name when module path doesn't start with namespace | Logger gets console only | Use `get_logger("myapp.modulename")` explicitly |
 | Calling `log_to_db(...)` without `await` | Coroutine is created but never executed | Use `await log_to_db(...)` or just use `logger.error(...)` which handles async internally |
 
+### Do / Don't Examples
+
+**Namespace mismatch:**
+
+```python
+# WRONG -- namespace is "myapp" but logger name starts with "api"
+configure_logging(namespace="myapp")
+logger = get_logger("api.routes")  # console only, no DB/Discord
+
+# RIGHT
+configure_logging(namespace="myapp")
+logger = get_logger("myapp.routes")  # DB + Discord + console
+```
+
+**Forgetting `await` on async helpers:**
+
+```python
+# WRONG -- coroutine is created but never runs
+log_to_db(level="ERROR", message="broke", logger_name="myapp")
+
+# RIGHT -- option A: await the coroutine
+await log_to_db(level="ERROR", message="broke", logger_name="myapp")
+
+# RIGHT -- option B: use the standard logger (no await needed)
+logger = get_logger("myapp")
+logger.error("broke")
+```
+
+**Wrong init order:**
+
+```python
+# WRONG -- DB logging set up before engine exists
+configure_logging(namespace="myapp")
+setup_db_logging(session_maker=session_maker, log_model=Log, namespace="myapp")
+engine = create_async_engine(...)  # too late
+session_maker = async_sessionmaker(engine)
+
+# RIGHT -- engine first, then logging
+engine = create_async_engine(...)
+session_maker = async_sessionmaker(engine, expire_on_commit=False)
+configure_logging(namespace="myapp")
+setup_db_logging(session_maker=session_maker, log_model=Log, namespace="myapp")
+```
+
 ## Testing Conventions
 
 - Call `reset_db_handler()` (from `hibiki_logger.logger`) between tests to clear the global DB handler singleton.
 - Use `monkeypatch.setenv` for environment variables and `importlib.reload(config_module)` to pick up changes.
 - Mock `aiohttp.ClientSession` for Discord tests to avoid real HTTP calls.
-- Tests use `pytest` with `asyncio_mode = "strict"`.
+- Tests use `pytest` with `asyncio_mode = "strict"`. All async tests **must** use `@pytest.mark.asyncio`.
+
+**Dev dependencies:** `pytest>=7.0`, `pytest-asyncio>=0.21`, `black>=23.0`, `flake8>=6.0`
+
+### Handler isolation fixture
 
 ```python
 from hibiki_logger.logger import reset_db_handler
@@ -224,4 +301,29 @@ def clean_handler():
     reset_db_handler()
     yield
     reset_db_handler()
+```
+
+### Async test example
+
+```python
+import pytest
+from unittest.mock import AsyncMock, patch
+from hibiki_logger.discord_service import send_discord_notification
+
+@pytest.mark.asyncio
+async def test_send_discord_returns_false_without_url():
+    result = await send_discord_notification(message="test", webhook_url="")
+    assert result is False
+
+@pytest.mark.asyncio
+async def test_send_discord_calls_webhook():
+    mock_session = AsyncMock()
+    mock_session.__aenter__.return_value = mock_session
+    mock_session.post.return_value.__aenter__.return_value.status = 204
+
+    with patch("aiohttp.ClientSession", return_value=mock_session):
+        result = await send_discord_notification(
+            message="hello", webhook_url="https://discord.com/api/webhooks/test"
+        )
+    assert result is True
 ```
