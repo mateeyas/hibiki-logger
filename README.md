@@ -22,7 +22,7 @@ Production logging with console, database, and Discord notification support.
 pip install hibiki-logger
 ```
 
-## Quick Start
+## Quick start
 
 ### Console only
 
@@ -75,13 +75,13 @@ Not using SQLAlchemy? Use the raw DDL from `from hibiki_logger.models import LOG
 
 ## Configuration
 
-| Variable                | Default       | Description                                                      |
-| ----------------------- | ------------- | ---------------------------------------------------------------- |
-| `LOG_DISCORD_WEBHOOK_URL`   | _(none)_      | Discord webhook URL                                              |
-| `LOG_TABLE_NAME`        | `log`         | Database table name for log entries                              |
-| `LOG_DB_MIN_LEVEL`      | `WARNING`     | Minimum level saved to DB                                        |
-| `LOG_DISCORD_MIN_LEVEL` | `ERROR`       | Minimum level sent to Discord                                    |
-| `ENV`                   | `development` | Set to `production` for JSON output and ERROR-only console level |
+| Variable                  | Default       | Description                                                      |
+| ------------------------- | ------------- | ---------------------------------------------------------------- |
+| `LOG_DISCORD_WEBHOOK_URL` | _(none)_      | Discord webhook URL                                              |
+| `LOG_TABLE_NAME`          | `log`         | Database table name for log entries                              |
+| `LOG_DB_MIN_LEVEL`        | `WARNING`     | Minimum level saved to DB                                        |
+| `LOG_DISCORD_MIN_LEVEL`   | `ERROR`       | Minimum level sent to Discord                                    |
+| `ENV`                     | `development` | Set to `production` for JSON output and ERROR-only console level |
 
 ### Namespace
 
@@ -107,7 +107,7 @@ logger = add_context_to_logger(get_logger("myapp.users"), user_id="123", path="/
 logger.error("User creation failed")
 ```
 
-## API Reference
+## API reference
 
 | Function                                                 | Description                                                                |
 | -------------------------------------------------------- | -------------------------------------------------------------------------- |
@@ -119,7 +119,7 @@ logger.error("User creation failed")
 | `async log_to_discord(level, message, logger_name, ...)` | Manually send to Discord.                                                  |
 | `async log_error(error, logger_name, ...)`               | Log an exception with traceback to DB.                                     |
 
-## Framework Integration
+## Framework integration
 
 **FastAPI** — call both functions inside your lifespan handler:
 
