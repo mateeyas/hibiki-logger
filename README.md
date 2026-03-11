@@ -2,6 +2,7 @@
 
 Production logging with console, database, and Discord notification support.
 
+[![GitHub](https://img.shields.io/github/stars/mateeyas/hibiki-logger?style=social)](https://github.com/mateeyas/hibiki-logger)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
