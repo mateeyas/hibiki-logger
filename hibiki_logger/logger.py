@@ -16,6 +16,7 @@ DISCORD_LOG_MIN_LEVEL = logging.ERROR
 
 _logger_namespace = "app"
 _discord_webhook_url: Optional[str] = None
+_discord_username: Optional[str] = None
 
 _BASE_LOGGING_CONFIG = {
     "version": 1,
@@ -60,9 +61,10 @@ def configure_logging(
             Loggers under this namespace will receive DB/Discord handlers.
         extra_loggers: Additional logger names to configure (e.g. ["uvicorn", "fastapi"]).
     """
-    global _logger_namespace, _discord_webhook_url
+    global _logger_namespace, _discord_webhook_url, _discord_username
     _logger_namespace = namespace
     _discord_webhook_url = logging_config.LOG_DISCORD_WEBHOOK_URL
+    _discord_username = logging_config.LOG_DISCORD_USERNAME
 
     config = copy.deepcopy(_BASE_LOGGING_CONFIG)
     config["loggers"] = {}
@@ -198,6 +200,7 @@ async def log_to_discord(
     user_id: Optional[str] = None,
     path: Optional[str] = None,
     method: Optional[str] = None,
+    username: Optional[str] = None,
 ):
     """
     Send error notification to Discord if configured (non-blocking).
@@ -211,6 +214,7 @@ async def log_to_discord(
         user_id: Optional user ID
         path: Optional request path
         method: Optional HTTP method
+        username: Optional webhook display name
     """
     numeric_level = getattr(logging, level.upper(), None)
     if not numeric_level or numeric_level < DISCORD_LOG_MIN_LEVEL:
@@ -227,6 +231,7 @@ async def log_to_discord(
             message=message,
             logger_name=logger_name,
             webhook_url=_discord_webhook_url,
+            username=username,
             trace=trace,
             user_id=user_id,
             path=path,
@@ -290,6 +295,7 @@ class AsyncDBHandler(logging.Handler):
                             user_id=user_id,
                             path=path,
                             method=method,
+                            username=_discord_username,
                         )
                     )
                     self._background_tasks.add(discord_task)

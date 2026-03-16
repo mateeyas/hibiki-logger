@@ -1,11 +1,13 @@
 import logging
 import pytest
+from unittest.mock import AsyncMock, patch
 
 from hibiki_logger.logger import (
     configure_logging,
     setup_db_logging,
     get_logger,
     add_context_to_logger,
+    log_to_discord,
     AsyncDBHandler,
     reset_db_handler,
     _logger_namespace,
@@ -42,14 +44,24 @@ class TestConfigureLogging:
             configure_logging(namespace="app")
 
     def test_discord_webhook_url_from_env(self, monkeypatch):
-        monkeypatch.setattr(logger_module, "logging_config", type("C", (), {"LOG_DISCORD_WEBHOOK_URL": "https://discord.com/api/webhooks/env"})())
+        monkeypatch.setattr(logger_module, "logging_config", type("C", (), {"LOG_DISCORD_WEBHOOK_URL": "https://discord.com/api/webhooks/env", "LOG_DISCORD_USERNAME": None})())
         configure_logging(namespace="app")
         assert logger_module._discord_webhook_url == "https://discord.com/api/webhooks/env"
 
     def test_discord_webhook_url_none_when_env_unset(self, monkeypatch):
-        monkeypatch.setattr(logger_module, "logging_config", type("C", (), {"LOG_DISCORD_WEBHOOK_URL": None})())
+        monkeypatch.setattr(logger_module, "logging_config", type("C", (), {"LOG_DISCORD_WEBHOOK_URL": None, "LOG_DISCORD_USERNAME": None})())
         configure_logging(namespace="app")
         assert logger_module._discord_webhook_url is None
+
+    def test_discord_username_from_config(self, monkeypatch):
+        monkeypatch.setattr(logger_module, "logging_config", type("C", (), {"LOG_DISCORD_WEBHOOK_URL": None, "LOG_DISCORD_USERNAME": "My Bot"})())
+        configure_logging(namespace="app")
+        assert logger_module._discord_username == "My Bot"
+
+    def test_discord_username_none_when_unset(self, monkeypatch):
+        monkeypatch.setattr(logger_module, "logging_config", type("C", (), {"LOG_DISCORD_WEBHOOK_URL": None, "LOG_DISCORD_USERNAME": None})())
+        configure_logging(namespace="app")
+        assert logger_module._discord_username is None
 
 
 class TestGetLogger:
@@ -101,3 +113,42 @@ class TestAddContextToLogger:
         assert kwargs["extra"]["user_id"] == "u2"
         assert "path" not in kwargs["extra"]
         assert "method" not in kwargs["extra"]
+
+
+class TestLogToDiscord:
+    @pytest.mark.asyncio
+    async def test_passes_username_to_send_error_notification(self, monkeypatch):
+        monkeypatch.setattr(logger_module, "_discord_webhook_url", "https://discord.com/api/webhooks/test")
+        monkeypatch.setattr(logger_module, "DISCORD_LOG_MIN_LEVEL", logging.ERROR)
+
+        with patch(
+            "hibiki_logger.discord_service.send_error_notification",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as mock_send:
+            await log_to_discord(
+                level="ERROR",
+                message="something broke",
+                logger_name="app.test",
+                username="Custom Bot",
+            )
+            mock_send.assert_called_once()
+            assert mock_send.call_args[1]["username"] == "Custom Bot"
+
+    @pytest.mark.asyncio
+    async def test_passes_none_username_when_not_set(self, monkeypatch):
+        monkeypatch.setattr(logger_module, "_discord_webhook_url", "https://discord.com/api/webhooks/test")
+        monkeypatch.setattr(logger_module, "DISCORD_LOG_MIN_LEVEL", logging.ERROR)
+
+        with patch(
+            "hibiki_logger.discord_service.send_error_notification",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as mock_send:
+            await log_to_discord(
+                level="ERROR",
+                message="something broke",
+                logger_name="app.test",
+            )
+            mock_send.assert_called_once()
+            assert mock_send.call_args[1]["username"] is None

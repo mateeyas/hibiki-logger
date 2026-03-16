@@ -19,6 +19,8 @@ class LoggingConfig:
 
     LOG_DISCORD_WEBHOOK_URL: Optional[str] = os.getenv("LOG_DISCORD_WEBHOOK_URL")
 
+    LOG_DISCORD_USERNAME: Optional[str] = os.getenv("LOG_DISCORD_USERNAME")
+
     LOG_TABLE_NAME: str = os.getenv("LOG_TABLE_NAME", "log")
 
     @classmethod
