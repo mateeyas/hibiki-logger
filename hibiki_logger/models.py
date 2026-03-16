@@ -12,7 +12,7 @@ from .config import config as logging_config
 
 
 def _get_table_name(table_name=None):
-    return table_name or logging_config.LOG_TABLE_NAME
+    return table_name or logging_config.LOG_DB_TABLE_NAME
 
 
 def create_log_model(Base, table_name=None):
@@ -21,7 +21,7 @@ def create_log_model(Base, table_name=None):
 
     Args:
         Base: Your SQLAlchemy declarative base.
-        table_name: Override table name (defaults to LOG_TABLE_NAME env var, then "log").
+        table_name: Override table name (defaults to LOG_DB_TABLE_NAME env var, then "log").
 
     Usage:
         from hibiki_logger.models import create_log_model
@@ -50,7 +50,7 @@ def get_log_table_sql(table_name=None):
     """Return raw PostgreSQL DDL for the log table.
 
     Args:
-        table_name: Override table name (defaults to LOG_TABLE_NAME env var, then "log").
+        table_name: Override table name (defaults to LOG_DB_TABLE_NAME env var, then "log").
     """
     name = _get_table_name(table_name)
     return f"""

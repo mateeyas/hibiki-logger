@@ -22,7 +22,7 @@ Usage:
     logger.error("Something went wrong", exc_info=True)
 """
 
-__version__ = "1.1.0"
+__version__ = "1.1.1"
 
 from .logger import (
     configure_logging,

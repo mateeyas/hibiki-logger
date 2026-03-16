@@ -79,7 +79,7 @@ Not using SQLAlchemy? Use the raw DDL from `from hibiki_logger.models import LOG
 | ------------------------- | ------------- | ---------------------------------------------------------------- |
 | `LOG_DISCORD_WEBHOOK_URL` | _(none)_      | Discord webhook URL                                              |
 | `LOG_DISCORD_USERNAME`    | _(none)_      | Display name for Discord webhook messages                        |
-| `LOG_TABLE_NAME`          | `log`         | Database table name for log entries                              |
+| `LOG_DB_TABLE_NAME`       | `log`         | Database table name for log entries (also reads `LOG_TABLE_NAME`) |
 | `LOG_DB_MIN_LEVEL`        | `WARNING`     | Minimum level saved to DB                                        |
 | `LOG_DISCORD_MIN_LEVEL`   | `ERROR`       | Minimum level sent to Discord                                    |
 | `ENV`                     | `development` | Set to `production` for JSON output and ERROR-only console level |

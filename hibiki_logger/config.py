@@ -21,7 +21,7 @@ class LoggingConfig:
 
     LOG_DISCORD_USERNAME: Optional[str] = os.getenv("LOG_DISCORD_USERNAME")
 
-    LOG_TABLE_NAME: str = os.getenv("LOG_TABLE_NAME", "log")
+    LOG_DB_TABLE_NAME: str = os.getenv("LOG_DB_TABLE_NAME") or os.getenv("LOG_TABLE_NAME", "log")
 
     @classmethod
     def from_dict(cls, config: dict):

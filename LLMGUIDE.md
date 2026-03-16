@@ -111,7 +111,7 @@ configure_logging(namespace="myapp", extra_loggers=["uvicorn", "fastapi"])
 | `get_logger` | `(name: str) -> logging.Logger` | Get a logger. Attaches DB/Discord handlers if name matches namespace. |
 | `add_context_to_logger` | `(logger, user_id=None, path=None, method=None) -> LoggerAdapter` | Wrap a logger with request context (stored in DB and Discord entries). |
 | `log_to_db` | `async (level, message, logger_name, user_id?, path?, method?, trace?)` | Manually write a log entry to the database. Respects `LOG_DB_MIN_LEVEL`. |
-| `log_to_discord` | `async (level, message, logger_name, trace?, user_id?, path?, method?)` | Manually send a Discord notification. Respects `LOG_DISCORD_MIN_LEVEL`. |
+| `log_to_discord` | `async (level, message, logger_name, trace?, user_id?, path?, method?, username?)` | Manually send a Discord notification. Respects `LOG_DISCORD_MIN_LEVEL`. |
 | `log_error` | `async (error, logger_name, message?, user_id?, path?, method?)` | Log an exception to DB with auto-extracted traceback. |
 
 ### Internal helpers (test use)
@@ -124,8 +124,8 @@ configure_logging(namespace="myapp", extra_loggers=["uvicorn", "fastapi"])
 
 | Export | Type | Description |
 |--------|------|-------------|
-| `create_log_model(Base, table_name?)` | Factory function | Returns a `Log` SQLAlchemy model bound to the given `Base`. Table name defaults to `LOG_TABLE_NAME` env var (then `"log"`). |
-| `get_log_table_sql(table_name?)` | Function | Returns raw PostgreSQL DDL for the log table. Table name defaults to `LOG_TABLE_NAME` env var (then `"log"`). |
+| `create_log_model(Base, table_name?)` | Factory function | Returns a `Log` SQLAlchemy model bound to the given `Base`. Table name defaults to `LOG_DB_TABLE_NAME` env var (then `"log"`). |
+| `get_log_table_sql(table_name?)` | Function | Returns raw PostgreSQL DDL for the log table. Table name defaults to `LOG_DB_TABLE_NAME` env var (then `"log"`). |
 | `LOG_TABLE_SQL` | `str` | Pre-built DDL using the default table name (convenience shorthand for `get_log_table_sql()`). |
 
 ### Discord Service (`from hibiki_logger.discord_service import ...`)
@@ -148,7 +148,7 @@ Log = create_log_model(Base)                          # table "log" (default)
 Log = create_log_model(Base, table_name="app_log")    # custom table name
 ```
 
-The table name can also be set globally via the `LOG_TABLE_NAME` environment variable.
+The table name can also be set globally via the `LOG_DB_TABLE_NAME` environment variable (the older `LOG_TABLE_NAME` is still accepted as a fallback).
 
 The `Log` model has columns: `id` (UUID string), `level`, `message`, `logger_name`, `user_id`, `path`, `method`, `trace`, `created_at`.
 
@@ -177,10 +177,11 @@ Using `logger.error(...)` via `get_logger` does NOT require await -- the handler
 | Variable | Default | Effect |
 |----------|---------|--------|
 | `ENV` | `development` | `production` switches console to JSON format and ERROR-only level. |
-| `LOG_TABLE_NAME` | `log` | Database table name for log entries. |
+| `LOG_DB_TABLE_NAME` | `log` | Database table name for log entries (also reads `LOG_TABLE_NAME` for backwards compatibility). |
 | `LOG_DB_MIN_LEVEL` | `WARNING` | Minimum level for database logging. Options: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. |
 | `LOG_DISCORD_MIN_LEVEL` | `ERROR` | Minimum level for Discord notifications. Same options. |
 | `LOG_DISCORD_WEBHOOK_URL` | *(none)* | Discord webhook URL for error notifications. |
+| `LOG_DISCORD_USERNAME` | *(none)* | Display name for Discord webhook messages. Defaults to `"Hibiki Error Bot"` when unset. |
 
 Config is read at import time by `hibiki_logger.config.LoggingConfig` and re-read when `setup_db_logging` is called.
 
