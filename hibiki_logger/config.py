@@ -15,6 +15,8 @@ class LoggingConfig:
 
     LOG_DB_MIN_LEVEL: str = os.getenv("LOG_DB_MIN_LEVEL", "WARNING")
 
+    LOG_CONSOLE_MIN_LEVEL: str = os.getenv("LOG_CONSOLE_MIN_LEVEL", "INFO")
+
     LOG_DISCORD_MIN_LEVEL: str = os.getenv("LOG_DISCORD_MIN_LEVEL", "ERROR")
 
     LOG_DISCORD_WEBHOOK_URL: Optional[str] = os.getenv("LOG_DISCORD_WEBHOOK_URL")

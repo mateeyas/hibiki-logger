@@ -34,32 +34,62 @@ class TestConfigureLogging:
     def test_production_mode_sets_json(self, monkeypatch):
         root = logging.getLogger()
         original_handlers = root.handlers[:]
+        original_level = root.level
         try:
             monkeypatch.setenv("ENV", "production")
             configure_logging(namespace="app")
             assert len(root.handlers) > 0
+            assert root.level == original_level
         finally:
             root.handlers = original_handlers
             monkeypatch.setenv("ENV", "development")
             configure_logging(namespace="app")
 
+    def test_root_logger_not_overridden_in_production(self, monkeypatch):
+        root = logging.getLogger()
+        original_handlers = root.handlers[:]
+        try:
+            monkeypatch.setenv("ENV", "production")
+            configure_logging(namespace="app")
+            assert root.level == logging.INFO
+        finally:
+            root.handlers = original_handlers
+            monkeypatch.setenv("ENV", "development")
+            configure_logging(namespace="app")
+
+    def test_console_min_level_default(self):
+        configure_logging(namespace="lvltest")
+        lgr = logging.getLogger("lvltest")
+        assert lgr.level == logging.INFO
+
+    def test_console_min_level_env(self, monkeypatch):
+        monkeypatch.setattr(logger_module, "logging_config",
+            type("C", (), {
+                "LOG_CONSOLE_MIN_LEVEL": "WARNING",
+                "LOG_DISCORD_WEBHOOK_URL": None,
+                "LOG_DISCORD_USERNAME": None,
+            })())
+        configure_logging(namespace="lvltest2")
+        lgr = logging.getLogger("lvltest2")
+        assert lgr.level == logging.WARNING
+
     def test_discord_webhook_url_from_env(self, monkeypatch):
-        monkeypatch.setattr(logger_module, "logging_config", type("C", (), {"LOG_DISCORD_WEBHOOK_URL": "https://discord.com/api/webhooks/env", "LOG_DISCORD_USERNAME": None})())
+        monkeypatch.setattr(logger_module, "logging_config", type("C", (), {"LOG_DISCORD_WEBHOOK_URL": "https://discord.com/api/webhooks/env", "LOG_DISCORD_USERNAME": None, "LOG_CONSOLE_MIN_LEVEL": "INFO"})())
         configure_logging(namespace="app")
         assert logger_module._discord_webhook_url == "https://discord.com/api/webhooks/env"
 
     def test_discord_webhook_url_none_when_env_unset(self, monkeypatch):
-        monkeypatch.setattr(logger_module, "logging_config", type("C", (), {"LOG_DISCORD_WEBHOOK_URL": None, "LOG_DISCORD_USERNAME": None})())
+        monkeypatch.setattr(logger_module, "logging_config", type("C", (), {"LOG_DISCORD_WEBHOOK_URL": None, "LOG_DISCORD_USERNAME": None, "LOG_CONSOLE_MIN_LEVEL": "INFO"})())
         configure_logging(namespace="app")
         assert logger_module._discord_webhook_url is None
 
     def test_discord_username_from_config(self, monkeypatch):
-        monkeypatch.setattr(logger_module, "logging_config", type("C", (), {"LOG_DISCORD_WEBHOOK_URL": None, "LOG_DISCORD_USERNAME": "My Bot"})())
+        monkeypatch.setattr(logger_module, "logging_config", type("C", (), {"LOG_DISCORD_WEBHOOK_URL": None, "LOG_DISCORD_USERNAME": "My Bot", "LOG_CONSOLE_MIN_LEVEL": "INFO"})())
         configure_logging(namespace="app")
         assert logger_module._discord_username == "My Bot"
 
     def test_discord_username_none_when_unset(self, monkeypatch):
-        monkeypatch.setattr(logger_module, "logging_config", type("C", (), {"LOG_DISCORD_WEBHOOK_URL": None, "LOG_DISCORD_USERNAME": None})())
+        monkeypatch.setattr(logger_module, "logging_config", type("C", (), {"LOG_DISCORD_WEBHOOK_URL": None, "LOG_DISCORD_USERNAME": None, "LOG_CONSOLE_MIN_LEVEL": "INFO"})())
         configure_logging(namespace="app")
         assert logger_module._discord_username is None
 

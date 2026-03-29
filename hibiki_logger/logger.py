@@ -73,19 +73,18 @@ def configure_logging(
     if extra_loggers:
         all_logger_names.extend(extra_loggers)
 
+    console_level = logging_config.LOG_CONSOLE_MIN_LEVEL.upper()
+    is_production = os.getenv("ENV", "development") == "production"
+
     for name in all_logger_names:
         config["loggers"][name] = {
-            "handlers": ["console"],
-            "level": "INFO",
+            "handlers": ["json_console"] if is_production else ["console"],
+            "level": console_level,
             "propagate": False,
         }
 
-    if os.getenv("ENV", "development") == "production":
-        config["root"]["level"] = "ERROR"
+    if is_production:
         config["root"]["handlers"] = ["json_console"]
-        for name in config["loggers"]:
-            config["loggers"][name]["level"] = "ERROR"
-            config["loggers"][name]["handlers"] = ["json_console"]
 
     logging.config.dictConfig(config)
 

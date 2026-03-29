@@ -11,6 +11,7 @@ def restore_config(monkeypatch):
     yield
     monkeypatch.delenv("ENV", raising=False)
     monkeypatch.delenv("LOG_DB_MIN_LEVEL", raising=False)
+    monkeypatch.delenv("LOG_CONSOLE_MIN_LEVEL", raising=False)
     monkeypatch.delenv("LOG_DISCORD_MIN_LEVEL", raising=False)
     monkeypatch.delenv("LOG_DISCORD_WEBHOOK_URL", raising=False)
     importlib.reload(config_module)
@@ -46,6 +47,16 @@ class TestLoggingConfigDefaults:
         monkeypatch.setenv("LOG_DISCORD_MIN_LEVEL", "WARNING")
         importlib.reload(config_module)
         assert config_module.config.LOG_DISCORD_MIN_LEVEL == "WARNING"
+
+    def test_default_console_min_level(self, monkeypatch):
+        monkeypatch.delenv("LOG_CONSOLE_MIN_LEVEL", raising=False)
+        importlib.reload(config_module)
+        assert config_module.config.LOG_CONSOLE_MIN_LEVEL == "INFO"
+
+    def test_custom_console_min_level(self, monkeypatch):
+        monkeypatch.setenv("LOG_CONSOLE_MIN_LEVEL", "WARNING")
+        importlib.reload(config_module)
+        assert config_module.config.LOG_CONSOLE_MIN_LEVEL == "WARNING"
 
     def test_discord_webhook_url_none_by_default(self, monkeypatch):
         monkeypatch.delenv("LOG_DISCORD_WEBHOOK_URL", raising=False)
