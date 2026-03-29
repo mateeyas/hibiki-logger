@@ -13,6 +13,8 @@ class LoggingConfig:
 
     ENVIRONMENT: str = os.getenv("ENV", "development")
 
+    LOG_CONSOLE_FORMAT: str = os.getenv("LOG_CONSOLE_FORMAT", "text")
+
     LOG_DB_MIN_LEVEL: str = os.getenv("LOG_DB_MIN_LEVEL", "WARNING")
 
     LOG_CONSOLE_MIN_LEVEL: str = os.getenv("LOG_CONSOLE_MIN_LEVEL", "INFO")

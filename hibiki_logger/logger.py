@@ -1,7 +1,6 @@
 import copy
 import logging
 import logging.config
-import os
 import traceback
 from typing import Optional, List
 import asyncio
@@ -74,16 +73,17 @@ def configure_logging(
         all_logger_names.extend(extra_loggers)
 
     console_level = logging_config.LOG_CONSOLE_MIN_LEVEL.upper()
-    is_production = os.getenv("ENV", "development") == "production"
+    use_json = logging_config.LOG_CONSOLE_FORMAT.lower() == "json"
+    handler = "json_console" if use_json else "console"
 
     for name in all_logger_names:
         config["loggers"][name] = {
-            "handlers": ["json_console"] if is_production else ["console"],
+            "handlers": [handler],
             "level": console_level,
             "propagate": False,
         }
 
-    if is_production:
+    if use_json:
         config["root"]["handlers"] = ["json_console"]
 
     logging.config.dictConfig(config)

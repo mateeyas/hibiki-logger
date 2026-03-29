@@ -12,6 +12,7 @@ def restore_config(monkeypatch):
     monkeypatch.delenv("ENV", raising=False)
     monkeypatch.delenv("LOG_DB_MIN_LEVEL", raising=False)
     monkeypatch.delenv("LOG_CONSOLE_MIN_LEVEL", raising=False)
+    monkeypatch.delenv("LOG_CONSOLE_FORMAT", raising=False)
     monkeypatch.delenv("LOG_DISCORD_MIN_LEVEL", raising=False)
     monkeypatch.delenv("LOG_DISCORD_WEBHOOK_URL", raising=False)
     importlib.reload(config_module)
@@ -57,6 +58,16 @@ class TestLoggingConfigDefaults:
         monkeypatch.setenv("LOG_CONSOLE_MIN_LEVEL", "WARNING")
         importlib.reload(config_module)
         assert config_module.config.LOG_CONSOLE_MIN_LEVEL == "WARNING"
+
+    def test_default_console_format(self, monkeypatch):
+        monkeypatch.delenv("LOG_CONSOLE_FORMAT", raising=False)
+        importlib.reload(config_module)
+        assert config_module.config.LOG_CONSOLE_FORMAT == "text"
+
+    def test_custom_console_format(self, monkeypatch):
+        monkeypatch.setenv("LOG_CONSOLE_FORMAT", "json")
+        importlib.reload(config_module)
+        assert config_module.config.LOG_CONSOLE_FORMAT == "json"
 
     def test_discord_webhook_url_none_by_default(self, monkeypatch):
         monkeypatch.delenv("LOG_DISCORD_WEBHOOK_URL", raising=False)
