@@ -5,7 +5,7 @@ A logging package with console, database, and Discord notification support.
 
 Features:
 - Console logging (human-readable or JSON)
-- Database logging (PostgreSQL via SQLAlchemy)
+- Database logging via SQLAlchemy (engine-agnostic; bring your own async driver)
 - Discord error notifications (via webhook URL)
 - Configurable log levels for each destination
 - Non-blocking async operations
@@ -22,7 +22,7 @@ Usage:
     logger.error("Something went wrong", exc_info=True)
 """
 
-__version__ = "1.2.0"
+__version__ = "1.3.0"
 
 from .logger import (
     configure_logging,

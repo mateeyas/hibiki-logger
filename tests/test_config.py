@@ -9,7 +9,6 @@ import hibiki_logger.config as config_module
 def restore_config(monkeypatch):
     """Reset environment variables and reload config_module after each test."""
     yield
-    monkeypatch.delenv("ENV", raising=False)
     monkeypatch.delenv("LOG_DB_MIN_LEVEL", raising=False)
     monkeypatch.delenv("LOG_CONSOLE_MIN_LEVEL", raising=False)
     monkeypatch.delenv("LOG_CONSOLE_FORMAT", raising=False)
@@ -19,16 +18,6 @@ def restore_config(monkeypatch):
 
 
 class TestLoggingConfigDefaults:
-    def test_default_environment(self, monkeypatch):
-        monkeypatch.delenv("ENV", raising=False)
-        importlib.reload(config_module)
-        assert config_module.config.ENVIRONMENT == "development"
-
-    def test_custom_environment(self, monkeypatch):
-        monkeypatch.setenv("ENV", "production")
-        importlib.reload(config_module)
-        assert config_module.config.ENVIRONMENT == "production"
-
     def test_default_db_min_level(self, monkeypatch):
         monkeypatch.delenv("LOG_DB_MIN_LEVEL", raising=False)
         importlib.reload(config_module)

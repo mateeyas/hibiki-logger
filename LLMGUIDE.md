@@ -4,9 +4,9 @@
 
 ## What is hibiki-logger?
 
-Hibiki Logger (v1.0.1) is a Python 3.10+ logging library that routes log messages to three destinations: **console**, **PostgreSQL** (or any SQLAlchemy-supported database), and **Discord** (via webhooks). All DB and Discord I/O is async and non-blocking.
+Hibiki Logger (v1.3.0) is a Python 3.10+ logging library that routes log messages to three destinations: **console**, **PostgreSQL** (or any SQLAlchemy-supported database), and **Discord** (via webhooks). All DB and Discord I/O is async and non-blocking.
 
-**Runtime dependencies:** `sqlalchemy>=2.0.0`, `asyncpg>=0.28.0`, `aiohttp>=3.8.0`
+**Runtime dependencies:** `sqlalchemy>=2.0.0`, `aiohttp>=3.8.0`. The host application supplies its own async DB driver (e.g. `asyncpg`/`psycopg` for PostgreSQL, `aiosqlite` for SQLite, `aiomysql`/`asyncmy` for MySQL).
 
 ## Quick Start
 
@@ -176,14 +176,15 @@ Using `logger.error(...)` via `get_logger` does NOT require await -- the handler
 
 | Variable | Default | Effect |
 |----------|---------|--------|
-| `ENV` | `development` | `production` switches console to JSON format and ERROR-only level. |
+| `LOG_CONSOLE_FORMAT` | `text` | Console output format. Options: `text`, `json`. |
+| `LOG_CONSOLE_MIN_LEVEL` | `INFO` | Minimum level for console output. Options: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. |
 | `LOG_DB_TABLE_NAME` | `log` | Database table name for log entries (also reads `LOG_TABLE_NAME` for backwards compatibility). |
-| `LOG_DB_MIN_LEVEL` | `WARNING` | Minimum level for database logging. Options: `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. |
-| `LOG_DISCORD_MIN_LEVEL` | `ERROR` | Minimum level for Discord notifications. Same options. |
+| `LOG_DB_MIN_LEVEL` | `WARNING` | Minimum level for database logging. Same options as `LOG_CONSOLE_MIN_LEVEL`. |
 | `LOG_DISCORD_WEBHOOK_URL` | *(none)* | Discord webhook URL for error notifications. |
 | `LOG_DISCORD_USERNAME` | *(none)* | Display name for Discord webhook messages. Defaults to `"Hibiki Error Bot"` when unset. |
+| `LOG_DISCORD_MIN_LEVEL` | `ERROR` | Minimum level for Discord notifications. Same options as `LOG_CONSOLE_MIN_LEVEL`. |
 
-Config is read at import time by `hibiki_logger.config.LoggingConfig` and re-read when `setup_db_logging` is called.
+Environment variables are read once when `hibiki_logger.config` is imported and stored on `LoggingConfig`. `setup_db_logging` reads from that in-memory config when it computes DB and Discord level thresholds — changing env vars after import has no effect unless `hibiki_logger.config` is reloaded.
 
 ## Framework Integration Patterns
 

@@ -5,6 +5,20 @@ All notable changes to Hibiki Logger will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.0] - 2026-05-03
+
+### Changed
+
+- Removed `asyncpg` from runtime dependencies. The library is engine-agnostic and only requires SQLAlchemy; users install whichever async driver matches their database (e.g. `asyncpg`/`psycopg`, `aiosqlite`, `aiomysql`/`asyncmy`).
+
+### Removed
+
+- `LoggingConfig.ENVIRONMENT` and the `ENV` environment variable. The attribute was no longer read by the library after 1.2.0 introduced `LOG_CONSOLE_FORMAT` and `LOG_CONSOLE_MIN_LEVEL`. Use those variables to control console output instead.
+
+### Fixed
+
+- `LLMGUIDE.md`: removed stale `ENV` env-var entry that described behavior superseded in 1.2.0, added the missing `LOG_CONSOLE_FORMAT` and `LOG_CONSOLE_MIN_LEVEL` rows, and clarified that env vars are only read once at config-module import.
+
 ## [1.2.0] - 2026-03-29
 
 ### Added
@@ -40,6 +54,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Framework integration support for FastAPI, Django, and Flask
 - `LLMGUIDE.md` for AI coding assistant context
 
+[1.3.0]: https://github.com/mateeyas/hibiki-logger/releases/tag/v1.3.0
 [1.2.0]: https://github.com/mateeyas/hibiki-logger/releases/tag/v1.2.0
 [1.0.1]: https://github.com/mateeyas/hibiki-logger/releases/tag/v1.0.1
 [1.0.0]: https://github.com/mateeyas/hibiki-logger/releases/tag/v1.0.0

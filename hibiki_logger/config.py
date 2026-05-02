@@ -11,8 +11,6 @@ from typing import Optional
 class LoggingConfig:
     """Configuration class for logging settings"""
 
-    ENVIRONMENT: str = os.getenv("ENV", "development")
-
     LOG_CONSOLE_FORMAT: str = os.getenv("LOG_CONSOLE_FORMAT", "text")
 
     LOG_DB_MIN_LEVEL: str = os.getenv("LOG_DB_MIN_LEVEL", "WARNING")

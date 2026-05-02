@@ -27,7 +27,6 @@ classifiers = [
 dependencies = [
     "aiohttp>=3.8.0",
     "sqlalchemy>=2.0.0",
-    "asyncpg>=0.28.0",
 ]
 
 [project.optional-dependencies]

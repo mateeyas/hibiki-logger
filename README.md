@@ -50,6 +50,8 @@ Log = create_log_model(Base)
 setup_db_logging(session_maker=session_maker, log_model=Log, namespace="myapp")
 ```
 
+Hibiki Logger does not bundle a database driver. Install whichever async driver matches your engine, e.g. `asyncpg` or `psycopg` for PostgreSQL, `aiosqlite` for SQLite, `aiomysql` or `asyncmy` for MySQL/MariaDB.
+
 The `log` table must exist before logging starts. The expected schema:
 
 | Column        | Type                       | Nullable |
