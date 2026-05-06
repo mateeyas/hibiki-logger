@@ -5,6 +5,12 @@ All notable changes to Hibiki Logger will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.1] - 2026-05-07
+
+### Fixed
+
+- `AsyncDBHandler` no longer writes each namespace log record to the database twice. The handler is now attached to the namespace logger only; child loggers reach it via standard log-record propagation, so every record produces exactly one DB insert. Previously both `setup_db_logging` and `get_logger` could attach the same handler to the namespace logger and to each child, causing duplicate writes when a child logger emitted a record.
+
 ## [1.3.0] - 2026-05-03
 
 ### Changed
@@ -54,6 +60,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Framework integration support for FastAPI, Django, and Flask
 - `LLMGUIDE.md` for AI coding assistant context
 
+[1.3.1]: https://github.com/mateeyas/hibiki-logger/releases/tag/v1.3.1
 [1.3.0]: https://github.com/mateeyas/hibiki-logger/releases/tag/v1.3.0
 [1.2.0]: https://github.com/mateeyas/hibiki-logger/releases/tag/v1.2.0
 [1.0.1]: https://github.com/mateeyas/hibiki-logger/releases/tag/v1.0.1

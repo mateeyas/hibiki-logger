@@ -1,3 +1,4 @@
+import asyncio
 import logging
 import pytest
 from unittest.mock import AsyncMock, patch
@@ -115,9 +116,20 @@ class TestGetLogger:
     def test_namespace_logger_gets_db_handler(self):
         configure_logging(namespace="testns")
         reset_db_handler()
-        lgr = get_logger("testns.sub")
-        has_db = any(isinstance(h, AsyncDBHandler) for h in lgr.handlers)
+        get_logger("testns.sub")
+        ns_logger = logging.getLogger("testns")
+        has_db = any(isinstance(h, AsyncDBHandler) for h in ns_logger.handlers)
         assert has_db
+
+    def test_child_logger_does_not_get_db_handler_directly(self):
+        # The DB handler must live on the namespace logger only; children
+        # reach it via propagation. Attaching it to a child too would
+        # cause duplicate DB writes.
+        configure_logging(namespace="testns_child")
+        reset_db_handler()
+        child = get_logger("testns_child.sub")
+        has_db_on_child = any(isinstance(h, AsyncDBHandler) for h in child.handlers)
+        assert not has_db_on_child
 
     def test_non_namespace_logger_no_db_handler(self):
         configure_logging(namespace="testns2")
@@ -193,3 +205,134 @@ class TestLogToDiscord:
             )
             mock_send.assert_called_once()
             assert mock_send.call_args[1]["username"] is None
+
+
+class _FakeLog:
+    """Minimal stand-in for the user's Log model. Records inserts."""
+
+    instances: list = []
+
+    def __init__(self, **fields):
+        self.fields = fields
+        _FakeLog.instances.append(self)
+
+
+class _FakeSession:
+    def __init__(self, store):
+        self._store = store
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    def add(self, entry):
+        self._store.append(entry)
+
+    async def commit(self):
+        return None
+
+
+def _make_session_maker(store):
+    def _maker():
+        return _FakeSession(store)
+
+    return _maker
+
+
+class TestNoDuplicateDBWrites:
+    @pytest.mark.asyncio
+    async def test_child_logger_emits_single_db_row(self, monkeypatch):
+        """Regression: a record emitted from a child logger under the
+        configured namespace must produce exactly one DB insert, not two.
+
+        Before the fix, both the namespace logger and each child logger
+        had their own AsyncDBHandler attached, so propagation produced
+        duplicate writes.
+        """
+        monkeypatch.setattr(
+            logger_module,
+            "logging_config",
+            type(
+                "C",
+                (),
+                {
+                    "LOG_CONSOLE_MIN_LEVEL": "INFO",
+                    "LOG_CONSOLE_FORMAT": "text",
+                    "LOG_DISCORD_WEBHOOK_URL": None,
+                    "LOG_DISCORD_USERNAME": None,
+                    "LOG_DB_MIN_LEVEL": "WARNING",
+                    "LOG_DISCORD_MIN_LEVEL": "ERROR",
+                },
+            )(),
+        )
+
+        rows: list = []
+        reset_db_handler()
+        configure_logging(namespace="dupcheck")
+        setup_db_logging(_make_session_maker(rows), _FakeLog, namespace="dupcheck")
+
+        # Call get_logger AFTER setup_db_logging to exercise the path
+        # that previously double-attached the handler.
+        child = get_logger("dupcheck.sub")
+        child.warning("hello from child")
+
+        # Drain background tasks created by AsyncDBHandler.emit.
+        pending = [
+            t for t in asyncio.all_tasks() if t is not asyncio.current_task()
+        ]
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+
+        assert len(rows) == 1, (
+            f"expected exactly one DB row, got {len(rows)}: "
+            f"{[r.fields for r in rows]}"
+        )
+        assert rows[0].fields["message"] == "hello from child"
+        assert rows[0].fields["logger_name"] == "dupcheck.sub"
+        assert rows[0].fields["level"] == "WARNING"
+
+    @pytest.mark.asyncio
+    async def test_single_db_row_when_get_logger_called_first(self, monkeypatch):
+        """Regression: calling get_logger before setup_db_logging must
+        also yield a single DB write per record.
+        """
+        monkeypatch.setattr(
+            logger_module,
+            "logging_config",
+            type(
+                "C",
+                (),
+                {
+                    "LOG_CONSOLE_MIN_LEVEL": "INFO",
+                    "LOG_CONSOLE_FORMAT": "text",
+                    "LOG_DISCORD_WEBHOOK_URL": None,
+                    "LOG_DISCORD_USERNAME": None,
+                    "LOG_DB_MIN_LEVEL": "WARNING",
+                    "LOG_DISCORD_MIN_LEVEL": "ERROR",
+                },
+            )(),
+        )
+
+        rows: list = []
+        reset_db_handler()
+        configure_logging(namespace="dupcheck2")
+
+        child = get_logger("dupcheck2.sub")
+        setup_db_logging(_make_session_maker(rows), _FakeLog, namespace="dupcheck2")
+
+        child.error("boom")
+
+        pending = [
+            t for t in asyncio.all_tasks() if t is not asyncio.current_task()
+        ]
+        if pending:
+            await asyncio.gather(*pending, return_exceptions=True)
+
+        # Filter to only rows from this test (other tests may share state).
+        my_rows = [r for r in rows if r.fields["logger_name"] == "dupcheck2.sub"]
+        assert len(my_rows) == 1, (
+            f"expected exactly one DB row, got {len(my_rows)}: "
+            f"{[r.fields for r in my_rows]}"
+        )

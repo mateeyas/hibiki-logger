@@ -315,48 +315,65 @@ def reset_db_handler():
     _db_handler = None
 
 
-def register_db_handler_with_loggers():
-    """Register the database handler with all loggers in the configured namespace."""
-    global _db_handler
+def _attach_db_handler_to_namespace():
+    """Attach the singleton AsyncDBHandler to the namespace logger only.
 
+    Child loggers under the namespace reach this handler via standard
+    log-record propagation, so we must NOT attach the handler to children;
+    doing so would cause every record to be written to the DB twice (once
+    by the child handler, once by the namespace handler that the record
+    propagates to).
+    """
+    global _db_handler
     if not _db_handler:
         _db_handler = AsyncDBHandler()
 
-    for logger_name, logger in logging.Logger.manager.loggerDict.items():
-        if isinstance(logger, logging.Logger) and (
-            logger_name.startswith(f"{_logger_namespace}.") or logger_name == _logger_namespace
-        ):
-            has_db_handler = any(
-                isinstance(handler, AsyncDBHandler) for handler in logger.handlers
-            )
-            if not has_db_handler:
-                logger.addHandler(_db_handler)
+    namespace_logger = logging.getLogger(_logger_namespace)
+    has_db_handler = any(
+        isinstance(handler, AsyncDBHandler) for handler in namespace_logger.handlers
+    )
+    if not has_db_handler:
+        namespace_logger.addHandler(_db_handler)
+
+    for logger_name, logger in list(logging.Logger.manager.loggerDict.items()):
+        if not isinstance(logger, logging.Logger):
+            continue
+        if logger_name == _logger_namespace:
+            continue
+        if not logger_name.startswith(f"{_logger_namespace}."):
+            continue
+        logger.handlers = [h for h in logger.handlers if not isinstance(h, AsyncDBHandler)]
+
+
+def register_db_handler_with_loggers():
+    """Register the database handler with the namespace logger.
+
+    Kept for backward compatibility; delegates to the namespace-only
+    attachment helper. Child loggers receive DB logging via propagation.
+    """
+    _attach_db_handler_to_namespace()
 
 
 def get_logger(name: str) -> logging.Logger:
     """
     Get a logger with the specified name.
-    If the name is in the configured namespace, adds a database handler.
+    If the name is in the configured namespace, ensures the namespace
+    logger has a database handler attached. The handler is attached to
+    the namespace logger only; child loggers reach it through standard
+    log-record propagation, which guarantees exactly one DB write per
+    record.
 
     Args:
         name: The name of the logger.
 
     Returns:
-        A logger instance with database logging enabled for namespace loggers.
+        A logger instance. For names inside the configured namespace,
+        DB logging is wired up on the namespace logger.
     """
     logger = logging.getLogger(name)
 
     if name.startswith(f"{_logger_namespace}.") or name == _logger_namespace:
-        global _db_handler
-
-        has_db_handler = any(
-            isinstance(handler, AsyncDBHandler) for handler in logger.handlers
-        )
-
-        if not has_db_handler:
-            if not _db_handler:
-                _db_handler = AsyncDBHandler()
-            logger.addHandler(_db_handler)
+        _attach_db_handler_to_namespace()
 
     return logger
 

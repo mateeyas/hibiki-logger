@@ -4,7 +4,7 @@
 
 ## What is hibiki-logger?
 
-Hibiki Logger (v1.3.0) is a Python 3.10+ logging library that routes log messages to three destinations: **console**, **PostgreSQL** (or any SQLAlchemy-supported database), and **Discord** (via webhooks). All DB and Discord I/O is async and non-blocking.
+Hibiki Logger (v1.3.1) is a Python 3.10+ logging library that routes log messages to three destinations: **console**, **PostgreSQL** (or any SQLAlchemy-supported database), and **Discord** (via webhooks). All DB and Discord I/O is async and non-blocking.
 
 **Runtime dependencies:** `sqlalchemy>=2.0.0`, `aiohttp>=3.8.0`. The host application supplies its own async DB driver (e.g. `asyncpg`/`psycopg` for PostgreSQL, `aiosqlite` for SQLite, `aiomysql`/`asyncmy` for MySQL).
 
