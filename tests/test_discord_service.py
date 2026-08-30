@@ -2,6 +2,7 @@ import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
 from hibiki_logger.discord_service import (
+    _plain_text_alert,
     send_discord_notification,
     send_error_notification,
 )
@@ -227,6 +228,46 @@ class FakeSession:
 
     async def __aexit__(self, *exc_info):
         return False
+
+
+class TestPlainTextFooter:
+    """The suppression count must survive truncation.
+
+    Message and trace are capped inside the renderer, but logger_name,
+    path, method and user_id are not, so a large request context can push
+    a plain-text alert over the limit.
+    """
+
+    def _alert(self, path_length, suppressed_count=142):
+        return _plain_text_alert(
+            level="ERROR",
+            message="x" * 2000,
+            logger_name="app.orders",
+            trace="Traceback (most recent call last):\n" + ("  line\n" * 400),
+            user_id="u123",
+            path="/api/report?" + "f" * path_length,
+            method="POST",
+            suppressed_count=suppressed_count,
+        )
+
+    def test_footer_survives_a_large_request_context(self):
+        alert = self._alert(path_length=800)
+        assert len(alert) <= 1900
+        assert alert.endswith("_142 further occurrences suppressed._")
+
+    def test_footer_survives_at_the_threshold(self):
+        """~450 characters of path is where this used to start truncating."""
+        for path_length in (400, 450, 500, 600):
+            alert = self._alert(path_length)
+            assert len(alert) <= 1900, path_length
+            assert alert.endswith(
+                "_142 further occurrences suppressed._"
+            ), path_length
+
+    def test_nothing_is_appended_when_there_is_nothing_to_report(self):
+        alert = self._alert(path_length=800, suppressed_count=0)
+        assert len(alert) <= 1900
+        assert "suppressed" not in alert
 
 
 class TestRateLimitHandling:
