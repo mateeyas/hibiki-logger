@@ -263,7 +263,7 @@ async def log_to_discord(
 
         from .discord_service import send_error_notification
 
-        await send_error_notification(
+        delivered = await send_error_notification(
             level=level,
             message=message,
             logger_name=logger_name,
@@ -276,6 +276,10 @@ async def log_to_discord(
             suppressed_count=decision.suppressed,
             dropped_count=decision.dropped,
         )
+        if not delivered:
+            # Nothing reached Discord, so this must not suppress the next
+            # occurrence of the same fault.
+            _get_discord_throttle().record_failure(decision)
 
     except Exception as e:
         print(f"Error sending Discord error notification: {str(e)}")

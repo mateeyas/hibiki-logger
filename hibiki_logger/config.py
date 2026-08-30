@@ -11,8 +11,13 @@ _TRUE_VALUES = {"1", "true", "yes", "on"}
 _FALSE_VALUES = {"0", "false", "no", "off"}
 
 
-def _int_env(name: str, default: int) -> int:
-    """Read a positive integer env var, falling back on anything unusable."""
+def _int_env(name: str, default: int, minimum: int = 1) -> int:
+    """Read an integer env var, falling back on anything unusable.
+
+    `minimum` is 1 by default but 0 where zero is a meaningful setting, so
+    an operator can switch a stage off rather than silently receiving the
+    default they were trying to override.
+    """
     raw = os.getenv(name)
     if raw is None:
         return default
@@ -20,7 +25,7 @@ def _int_env(name: str, default: int) -> int:
         value = int(raw)
     except (TypeError, ValueError):
         return default
-    return value if value > 0 else default
+    return value if value >= minimum else default
 
 
 def _bool_env(name: str, default: bool) -> bool:
@@ -54,11 +59,14 @@ class LoggingConfig:
     LOG_DB_TABLE_NAME: str = os.getenv("LOG_DB_TABLE_NAME") or os.getenv("LOG_TABLE_NAME", "log")
 
     # Seconds during which alerts sharing a dedup key collapse into one send.
-    LOG_DISCORD_DEDUP_WINDOW: int = _int_env("LOG_DISCORD_DEDUP_WINDOW", 300)
+    # Set to 0 to disable deduplication.
+    LOG_DISCORD_DEDUP_WINDOW: int = _int_env("LOG_DISCORD_DEDUP_WINDOW", 300, minimum=0)
 
     # Webhook send budget over a sliding 60 second window. Discord allows
     # roughly 5 requests per 2 seconds; the default sits well below that.
-    # Alerts beyond the budget are dropped and counted, not queued.
+    # Alerts beyond the budget are dropped and counted, not queued. Must be
+    # at least 1; there is no "send nothing" setting, as unsetting
+    # LOG_DISCORD_WEBHOOK_URL already disables Discord entirely.
     LOG_DISCORD_MAX_PER_MINUTE: int = _int_env("LOG_DISCORD_MAX_PER_MINUTE", 30)
 
     LOG_DISCORD_EMBED: bool = _bool_env("LOG_DISCORD_EMBED", True)

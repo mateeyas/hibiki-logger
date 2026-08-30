@@ -314,8 +314,65 @@ class TestRateLimitHandling:
         assert session.post_count == 1
 
     @pytest.mark.asyncio
-    async def test_backoff_is_capped(self):
+    async def test_exponential_backoff_is_capped(self):
         from hibiki_logger.discord_service import MAX_BACKOFF_SECONDS, _backoff_delay
 
-        assert _backoff_delay(0, 9999.0) == MAX_BACKOFF_SECONDS
         assert _backoff_delay(20) == MAX_BACKOFF_SECONDS
+
+    @pytest.mark.asyncio
+    async def test_retry_after_is_honoured_exactly_not_clamped(self):
+        """Retrying sooner than Discord asked escalates the rate limit."""
+        from hibiki_logger.discord_service import _backoff_delay
+
+        assert _backoff_delay(0, 9999.0) == 9999.0
+
+    @pytest.mark.asyncio
+    async def test_gives_up_rather_than_retrying_before_discord_is_ready(self):
+        session = FakeSession([FakeResponse(429, {"Retry-After": "600"})])
+        slept = []
+
+        async def fake_sleep(delay):
+            slept.append(delay)
+
+        with patch("aiohttp.ClientSession", return_value=session):
+            with patch("hibiki_logger.discord_service.asyncio.sleep", fake_sleep):
+                result = await send_discord_notification(
+                    message="test", webhook_url="https://example.com/webhook"
+                )
+
+        assert result is False
+        assert session.post_count == 1
+        assert slept == []
+
+    @pytest.mark.asyncio
+    async def test_backoff_does_not_hold_the_session_open(self):
+        """The session must be closed before any waiting begins."""
+        session = FakeSession([FakeResponse(503), FakeResponse(204)])
+        open_during_sleep = []
+
+        real_aenter = FakeSession.__aenter__
+        state = {"open": False}
+
+        async def tracking_aenter(self):
+            state["open"] = True
+            return await real_aenter(self)
+
+        async def tracking_aexit(self, *exc_info):
+            state["open"] = False
+            return False
+
+        async def fake_sleep(delay):
+            open_during_sleep.append(state["open"])
+
+        with patch.object(FakeSession, "__aenter__", tracking_aenter):
+            with patch.object(FakeSession, "__aexit__", tracking_aexit):
+                with patch("aiohttp.ClientSession", return_value=session):
+                    with patch(
+                        "hibiki_logger.discord_service.asyncio.sleep", fake_sleep
+                    ):
+                        await send_discord_notification(
+                            message="test",
+                            webhook_url="https://example.com/webhook",
+                        )
+
+        assert open_during_sleep == [False]

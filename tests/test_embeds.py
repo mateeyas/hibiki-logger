@@ -171,3 +171,27 @@ class TestBuildErrorEmbed:
     def test_empty_message(self):
         embed = build_error_embed("ERROR", "", "app.x")
         assert embed["description"] == ""
+
+
+class TestTruncationCountAccuracy:
+    """The count in the marker is the one number the marker exists to report."""
+
+    def test_reported_count_matches_characters_actually_dropped(self):
+        import re
+
+        pattern = re.compile(r"\.\.\. (\d+) characters truncated \.\.\.")
+        for limit in range(1, 300):
+            for size in (100, 137, 1000, 10000):
+                text = "A" * size
+                result = truncate_middle(text, limit)
+                match = pattern.search(result)
+                if not match:
+                    continue
+                kept = len(result) - len(match.group(0)) - 2  # two newlines
+                assert int(match.group(1)) == size - kept, (
+                    f"limit={limit} size={size}"
+                )
+
+    def test_result_never_exceeds_the_limit(self):
+        for limit in range(1, 300):
+            assert len(truncate_middle("A" * 5000, limit)) <= limit

@@ -185,8 +185,8 @@ Using `logger.error(...)` via `get_logger` does NOT require await -- the handler
 | `LOG_DISCORD_USERNAME` | *(none)* | Display name for Discord webhook messages. Defaults to `"Hibiki Error Bot"` when unset. |
 | `LOG_DISCORD_MIN_LEVEL` | `ERROR` | Minimum level for Discord notifications. Same options as `LOG_CONSOLE_MIN_LEVEL`. |
 | `LOG_DISCORD_EMBED` | `true` | Send Discord alerts as embeds. Set `false` for the pre-1.4.0 plain-text rendering. Accepts `1/0`, `true/false`, `yes/no`, `on/off`. |
-| `LOG_DISCORD_DEDUP_WINDOW` | `300` | Seconds an identical fault is collapsed into a single alert. |
-| `LOG_DISCORD_MAX_PER_MINUTE` | `30` | Webhook send budget over a sliding 60 second window. Excess is dropped and counted. |
+| `LOG_DISCORD_DEDUP_WINDOW` | `300` | Seconds an identical fault is collapsed into a single alert. `0` disables deduplication. |
+| `LOG_DISCORD_MAX_PER_MINUTE` | `30` | Maximum sends in any 60 second window. Excess is dropped and counted. Minimum `1`; `0` and negatives fall back to the default. |
 
 ### Discord throttling
 
@@ -198,12 +198,19 @@ reaching the webhook. Two stages, in order:
    plus innermost frame when a traceback is present, falling back to logger name
    plus message. The suppressed count is reported in the footer of the next
    alert for that signature.
-2. **Send budget.** `LOG_DISCORD_MAX_PER_MINUTE` caps sends over a sliding 60
-   second window. Excess alerts are dropped and counted, not queued; the count
-   is reported on the next successful send.
+2. **Send budget.** `LOG_DISCORD_MAX_PER_MINUTE` caps how many alerts may be
+   sent in any 60 second window. It is a cap, not a smoother — the full budget
+   can go out back to back. Excess alerts are dropped and counted, not queued;
+   the count is reported on the next successful send.
 
-429 responses are retried honouring `Retry-After` with bounded exponential
-backoff (4 attempts, capped at 30 seconds).
+429 and 5xx responses are retried (4 attempts). `Retry-After` is honoured
+exactly; if it exceeds 30 seconds the alert is dropped rather than retried
+early, because retrying before the limit clears extends it. Plain exponential
+backoff is capped at 30 seconds.
+
+A send that fails does not open a dedup window — `record_failure` releases it —
+so a webhook outage cannot silence a fault for the window. The budget slot is
+kept, which bounds retry attempts to `LOG_DISCORD_MAX_PER_MINUTE`.
 
 The throttle is process-wide module state with no background task. Nothing needs
 starting or shutting down. Tests that assert on Discord sends should call

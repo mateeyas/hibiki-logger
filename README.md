@@ -87,8 +87,8 @@ Not using SQLAlchemy? Use the raw DDL from `from hibiki_logger.models import LOG
 | `LOG_DB_MIN_LEVEL`        | `WARNING`     | Minimum level saved to DB                                        |
 | `LOG_DISCORD_MIN_LEVEL`   | `ERROR`       | Minimum level sent to Discord                                    |
 | `LOG_DISCORD_EMBED`          | `true`     | Send Discord alerts as embeds rather than plain text             |
-| `LOG_DISCORD_DEDUP_WINDOW`   | `300`      | Seconds an identical fault is collapsed into a single alert      |
-| `LOG_DISCORD_MAX_PER_MINUTE` | `30`       | Webhook send budget over a sliding 60 seconds                    |
+| `LOG_DISCORD_DEDUP_WINDOW`   | `300`      | Seconds an identical fault is collapsed into a single alert; `0` disables |
+| `LOG_DISCORD_MAX_PER_MINUTE` | `30`       | Maximum Discord sends in any 60 second window (minimum `1`)      |
 
 All variables are optional and have working defaults; upgrading requires no
 configuration changes. Discord notifications remain off entirely unless
@@ -111,15 +111,20 @@ request ids, so `failed to process order 8831` would otherwise be a distinct
 alert on every occurrence. The number collapsed is reported on the next alert for
 that signature ("142 further occurrences suppressed.").
 
-**Send budget.** `LOG_DISCORD_MAX_PER_MINUTE` caps sends over a sliding 60 second
-window. Alerts beyond the budget are dropped and counted, and the count is
-reported on the next successful send. They are dropped rather than queued
-because Discord is the notification channel, not the record — every log record
-is still written to the database by the DB handler. There is no background
-worker and nothing to shut down.
+**Send budget.** `LOG_DISCORD_MAX_PER_MINUTE` caps how many alerts may be sent in
+any 60 second window. This is a cap, not a smoother: up to the full budget can go
+out back to back, and Discord's short-term limit is absorbed by retrying. Alerts
+beyond the budget are dropped and counted, and the count is reported on the next
+successful send. They are dropped rather than queued because Discord is the
+notification channel, not the record — every log record is still written to the
+database by the DB handler. There is no background worker and nothing to shut
+down.
 
-429 responses are retried, honouring Discord's `Retry-After` with bounded
-exponential backoff.
+429 responses are retried, honouring Discord's `Retry-After` with exponential
+backoff. If Discord asks for a delay longer than 30 seconds the alert is dropped
+rather than retried early, since retrying before the limit clears only extends
+it. An alert that fails to send does not open a dedup window, so a webhook
+outage cannot silence a fault.
 
 > The same behaviour is implemented independently in
 > [hibiki-discord](https://github.com/mateeyas/hibiki-discord). The two share no
@@ -215,7 +220,7 @@ async def lifespan(app: FastAPI):
 
 **Discord notifications not sending** — verify `LOG_DISCORD_WEBHOOK_URL` is set and `LOG_DISCORD_MIN_LEVEL` allows the level.
 
-**Fewer Discord alerts than expected** — this is usually deduplication working. Repeats of the same fault collapse for `LOG_DISCORD_DEDUP_WINDOW` seconds and are counted in the footer of the next alert for that fault. Alerts shed by `LOG_DISCORD_MAX_PER_MINUTE` are counted the same way. The database log table always has the full record.
+**Fewer Discord alerts than expected** — this is usually deduplication working. Set `LOG_DISCORD_DEDUP_WINDOW=0` to rule it out. Repeats of the same fault collapse for `LOG_DISCORD_DEDUP_WINDOW` seconds and are counted in the footer of the next alert for that fault. Alerts shed by `LOG_DISCORD_MAX_PER_MINUTE` are counted the same way. The database log table always has the full record.
 
 ## License
 

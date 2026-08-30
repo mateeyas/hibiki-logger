@@ -194,3 +194,90 @@ class TestStateBounds:
         throttle.check("ERROR", "a", "app.x")
         throttle.reset()
         assert throttle.check("ERROR", "a", "app.x").send is True
+
+
+class TestFailedSends:
+    """A send that never landed must not suppress the next occurrence."""
+
+    def test_failed_send_releases_the_dedup_window(self):
+        clock = FakeClock()
+        throttle = DiscordThrottle(dedup_window=300, max_per_minute=1000, clock=clock)
+        trace = make_trace()
+
+        first = throttle.check("ERROR", "boom", "app.x", trace)
+        assert first.send is True
+        throttle.record_failure(first)
+
+        second = throttle.check("ERROR", "boom", "app.x", trace)
+        assert second.send is True
+
+    def test_failed_send_still_consumes_budget(self):
+        """Retries of an undeliverable fault stay bounded by the budget."""
+        clock = FakeClock()
+        throttle = DiscordThrottle(dedup_window=300, max_per_minute=3, clock=clock)
+        trace = make_trace()
+
+        attempts = 0
+        for _ in range(100):
+            clock.advance(0.01)
+            decision = throttle.check("ERROR", "boom", "app.x", trace)
+            if decision.send:
+                attempts += 1
+                throttle.record_failure(decision)
+
+        assert attempts == 3
+
+    def test_failed_send_preserves_the_suppressed_count(self):
+        clock = FakeClock()
+        throttle = DiscordThrottle(dedup_window=10, max_per_minute=1000, clock=clock)
+        trace = make_trace()
+
+        throttle.check("ERROR", "boom", "app.x", trace)
+        for _ in range(5):
+            throttle.check("ERROR", "boom", "app.x", trace)
+
+        clock.advance(11)
+        failed = throttle.check("ERROR", "boom", "app.x", trace)
+        assert failed.suppressed == 5
+        throttle.record_failure(failed)
+
+        # The count was never delivered, so it must survive to the next send.
+        retry = throttle.check("ERROR", "boom", "app.x", trace)
+        assert retry.send is True
+        assert retry.suppressed == 5
+
+    def test_failed_send_preserves_the_dropped_count(self):
+        clock = FakeClock()
+        throttle = DiscordThrottle(dedup_window=300, max_per_minute=2, clock=clock)
+
+        throttle.check("ERROR", "a", "app.x")
+        throttle.check("ERROR", "b", "app.x")
+        for i in range(10):
+            throttle.check("ERROR", f"shed {i}", "app.x")
+
+        clock.advance(61)
+        failed = throttle.check("ERROR", "c", "app.x")
+        assert failed.dropped == 10
+        throttle.record_failure(failed)
+
+        recovered = throttle.check("ERROR", "d", "app.x")
+        assert recovered.dropped == 10
+
+    def test_record_failure_ignores_a_no_send_decision(self):
+        throttle = DiscordThrottle(dedup_window=300, max_per_minute=1)
+        throttle.check("ERROR", "a", "app.x")
+        suppressed = throttle.check("ERROR", "a", "app.x")
+        assert suppressed.send is False
+        throttle.record_failure(suppressed)  # must not raise or corrupt state
+
+
+class TestDisablingDedup:
+    def test_zero_window_disables_deduplication(self):
+        clock = FakeClock()
+        throttle = DiscordThrottle(dedup_window=0, max_per_minute=1000, clock=clock)
+        trace = make_trace()
+
+        sends = sum(
+            1 for _ in range(10) if throttle.check("ERROR", "boom", "app.x", trace).send
+        )
+        assert sends == 10

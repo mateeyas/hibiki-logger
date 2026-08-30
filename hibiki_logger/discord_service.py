@@ -16,6 +16,7 @@ CONTENT_LIMIT = 2000
 MAX_SEND_ATTEMPTS = 4
 BASE_BACKOFF_SECONDS = 1.0
 MAX_BACKOFF_SECONDS = 30.0
+REQUEST_TIMEOUT_SECONDS = 10
 
 
 def _parse_retry_after(response, payload: Optional[dict]) -> Optional[float]:
@@ -43,12 +44,64 @@ def _parse_retry_after(response, payload: Optional[dict]) -> Optional[float]:
 
 
 def _backoff_delay(attempt: int, retry_after: Optional[float] = None) -> float:
-    """Delay before the next attempt, honouring Discord's own request."""
-    backoff = min(BASE_BACKOFF_SECONDS * (2 ** attempt), MAX_BACKOFF_SECONDS)
+    """Delay before the next attempt.
+
+    Discord's own figure is honoured exactly when it gives one. It is not
+    clamped to MAX_BACKOFF_SECONDS: retrying sooner than asked is what
+    escalates a soft rate limit into a longer ban. Callers check the delay
+    against the cap and give up rather than retry early.
+    """
     if retry_after is not None:
-        # Never retry sooner than Discord asked, and never wait past the cap.
-        return min(max(retry_after, 0.0), MAX_BACKOFF_SECONDS)
-    return backoff
+        return max(retry_after, 0.0)
+    return min(BASE_BACKOFF_SECONDS * (2 ** attempt), MAX_BACKOFF_SECONDS)
+
+
+_OK = "ok"
+_RETRY = "retry"
+_FAIL = "fail"
+
+
+async def _attempt_send(webhook_url: str, payload: dict):
+    """Make one webhook request.
+
+    Returns (outcome, retry_after). The caller owns the waiting, so the
+    session and response are always closed before any backoff begins.
+    """
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                webhook_url,
+                json=payload,
+                headers={"Content-Type": "application/json"},
+                timeout=aiohttp.ClientTimeout(total=REQUEST_TIMEOUT_SECONDS),
+            ) as response:
+                status = response.status
+
+                if status in (200, 204):
+                    return _OK, None
+
+                if status == 429:
+                    try:
+                        body = await response.json(content_type=None)
+                    except Exception:
+                        body = None
+                    logger.warning("Discord rate limited the webhook")
+                    return _RETRY, _parse_retry_after(response, body)
+
+                if 500 <= status < 600:
+                    logger.warning("Discord returned %s", status)
+                    return _RETRY, None
+
+                # 4xx other than 429 will not succeed on retry.
+                logger.error(
+                    "Failed to send Discord notification. Status: %s", status
+                )
+                return _FAIL, None
+    except asyncio.CancelledError:
+        raise
+    except Exception as e:
+        logger.warning("Error sending Discord notification: %s", e)
+        return _RETRY, None
 
 
 async def send_discord_notification(
@@ -94,67 +147,32 @@ async def send_discord_notification(
         payload["avatar_url"] = avatar_url
 
     for attempt in range(MAX_SEND_ATTEMPTS):
-        try:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    webhook_url,
-                    json=payload,
-                    headers={"Content-Type": "application/json"},
-                    timeout=aiohttp.ClientTimeout(total=10),
-                ) as response:
-                    status = response.status
+        outcome, retry_after = await _attempt_send(webhook_url, payload)
 
-                    if status in (200, 204):
-                        logger.info("Discord notification sent successfully")
-                        return True
+        if outcome == _OK:
+            logger.info("Discord notification sent successfully")
+            return True
+        if outcome == _FAIL:
+            return False
 
-                    if status == 429:
-                        body = None
-                        try:
-                            body = await response.json(content_type=None)
-                        except Exception:
-                            body = None
-                        retry_after = _parse_retry_after(response, body)
-                        if attempt + 1 >= MAX_SEND_ATTEMPTS:
-                            logger.error(
-                                "Discord rate limited the webhook and retries are "
-                                "exhausted; dropping notification"
-                            )
-                            return False
-                        delay = _backoff_delay(attempt, retry_after)
-                        logger.warning(
-                            "Discord rate limited the webhook; retrying in %.2fs", delay
-                        )
-                        await asyncio.sleep(delay)
-                        continue
+        if attempt + 1 >= MAX_SEND_ATTEMPTS:
+            logger.error("Discord send failed and retries are exhausted")
+            return False
 
-                    if 500 <= status < 600:
-                        if attempt + 1 >= MAX_SEND_ATTEMPTS:
-                            logger.error(
-                                "Discord returned %s and retries are exhausted", status
-                            )
-                            return False
-                        delay = _backoff_delay(attempt)
-                        logger.warning(
-                            "Discord returned %s; retrying in %.2fs", status, delay
-                        )
-                        await asyncio.sleep(delay)
-                        continue
+        delay = _backoff_delay(attempt, retry_after)
+        if delay > MAX_BACKOFF_SECONDS:
+            # Retrying before Discord is ready would only deepen the limit.
+            logger.error(
+                "Discord asked to wait %.0fs, beyond the %.0fs cap; "
+                "dropping notification",
+                delay,
+                MAX_BACKOFF_SECONDS,
+            )
+            return False
 
-                    # 4xx other than 429 will not succeed on retry.
-                    logger.error(
-                        "Failed to send Discord notification. Status: %s", status
-                    )
-                    return False
-        except asyncio.CancelledError:
-            raise
-        except Exception as e:
-            if attempt + 1 >= MAX_SEND_ATTEMPTS:
-                logger.exception("Error sending Discord notification: %s", e)
-                return False
-            delay = _backoff_delay(attempt)
-            logger.warning("Error sending Discord notification (%s); retrying in %.2fs", e, delay)
-            await asyncio.sleep(delay)
+        logger.warning("Discord send failed; retrying in %.2fs", delay)
+        # Outside the session context, so nothing is held open while waiting.
+        await asyncio.sleep(delay)
 
     return False
 

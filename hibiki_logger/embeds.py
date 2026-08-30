@@ -70,12 +70,17 @@ def truncate_middle(text: str, limit: int) -> str:
     if len(text) <= limit:
         return text
 
-    dropped = len(text) - limit
-    marker = _ELLIPSIS.format(count=dropped)
-
-    # Re-derive the marker against the budget it actually consumes, so the
-    # reported count stays truthful once the marker itself is accounted for.
-    marker = _ELLIPSIS.format(count=dropped + len(marker))
+    # The marker's own length reduces the budget for kept text, which
+    # raises the number dropped, which can widen the marker by a digit and
+    # change the answer again. Iterate to a fixed point so the reported
+    # count is the number actually dropped.
+    marker = _ELLIPSIS.format(count=len(text) - limit)
+    for _ in range(4):
+        candidate = _ELLIPSIS.format(count=len(text) - limit + len(marker))
+        if len(candidate) == len(marker):
+            marker = candidate
+            break
+        marker = candidate
 
     if len(marker) >= limit:
         return truncate_end(text, limit)

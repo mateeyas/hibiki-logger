@@ -51,9 +51,14 @@ _FRAME_LINE = re.compile(
 
 
 class ThrottleDecision:
-    """Outcome of a throttle check for one alert."""
+    """Outcome of a throttle check for one alert.
 
-    __slots__ = ("send", "suppressed", "dropped")
+    A decision to send reserves a dedup window and a budget slot. If the
+    send then fails, pass the decision to ``record_failure`` so the window
+    is released; see that method for why the budget slot is not.
+    """
+
+    __slots__ = ("send", "suppressed", "dropped", "_key", "_previous_window")
 
     def __init__(self, send: bool, suppressed: int = 0, dropped: int = 0):
         self.send = send
@@ -61,6 +66,8 @@ class ThrottleDecision:
         self.suppressed = suppressed
         # Alerts discarded for exceeding the send budget since the last send.
         self.dropped = dropped
+        self._key = None
+        self._previous_window = None
 
     def __repr__(self) -> str:
         return (
@@ -173,7 +180,37 @@ class DiscordThrottle:
 
         dropped = self._dropped_pending
         self._dropped_pending = 0
-        return ThrottleDecision(True, suppressed=pending, dropped=dropped)
+
+        decision = ThrottleDecision(True, suppressed=pending, dropped=dropped)
+        decision._key = key
+        decision._previous_window = window
+        return decision
+
+    def record_failure(self, decision: ThrottleDecision) -> None:
+        """Release the dedup window reserved by a send that did not land.
+
+        Without this, a webhook that is briefly unreachable silences the
+        fault for the whole dedup window: the first alert opens the window,
+        fails to deliver, and every later occurrence is collapsed into an
+        alert nobody received. That is the failure this module exists to
+        prevent, so a failed send must not count as a send.
+
+        The budget slot is deliberately *not* released. Retrying a fault
+        whose webhook is down should stay bounded, and letting failures
+        consume budget caps the attempts at LOG_DISCORD_MAX_PER_MINUTE
+        rather than one per occurrence.
+        """
+        if not decision.send or decision._key is None:
+            return
+
+        if decision._previous_window is not None:
+            self._windows[decision._key] = decision._previous_window
+        else:
+            self._windows.pop(decision._key, None)
+
+        # Counts were consumed by an alert that never arrived; report them
+        # on whichever send lands next.
+        self._dropped_pending += decision.dropped
 
     def _has_budget(self, now: float) -> bool:
         """True when a send now stays inside the sliding-window budget."""

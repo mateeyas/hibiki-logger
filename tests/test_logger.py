@@ -448,3 +448,58 @@ class TestDiscordThrottlingEndToEnd:
             )
 
         assert mock_send.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_undelivered_alert_does_not_suppress_the_next(self, monkeypatch):
+        """A webhook outage must not silence the fault for the dedup window."""
+        monkeypatch.setattr(
+            logger_module, "_discord_webhook_url", "https://discord.com/api/webhooks/test"
+        )
+        monkeypatch.setattr(logger_module, "DISCORD_LOG_MIN_LEVEL", logging.ERROR)
+
+        from hibiki_logger.throttle import DiscordThrottle
+
+        monkeypatch.setattr(
+            logger_module,
+            "_discord_throttle",
+            DiscordThrottle(dedup_window=300, max_per_minute=1000),
+        )
+
+        with patch(
+            "hibiki_logger.discord_service.send_error_notification",
+            new_callable=AsyncMock,
+            return_value=False,  # webhook unreachable
+        ) as mock_send:
+            for _ in range(5):
+                await logger_module.log_to_discord(
+                    level="ERROR", message="db pool exhausted", logger_name="app.api"
+                )
+
+        assert mock_send.call_count == 5
+
+    @pytest.mark.asyncio
+    async def test_failed_attempts_stay_bounded_by_the_budget(self, monkeypatch):
+        monkeypatch.setattr(
+            logger_module, "_discord_webhook_url", "https://discord.com/api/webhooks/test"
+        )
+        monkeypatch.setattr(logger_module, "DISCORD_LOG_MIN_LEVEL", logging.ERROR)
+
+        from hibiki_logger.throttle import DiscordThrottle
+
+        monkeypatch.setattr(
+            logger_module,
+            "_discord_throttle",
+            DiscordThrottle(dedup_window=300, max_per_minute=4),
+        )
+
+        with patch(
+            "hibiki_logger.discord_service.send_error_notification",
+            new_callable=AsyncMock,
+            return_value=False,
+        ) as mock_send:
+            for _ in range(200):
+                await logger_module.log_to_discord(
+                    level="ERROR", message="db pool exhausted", logger_name="app.api"
+                )
+
+        assert mock_send.call_count == 4
