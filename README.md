@@ -123,8 +123,10 @@ down.
 429 responses are retried, honouring Discord's `Retry-After` with exponential
 backoff. If Discord asks for a delay longer than 30 seconds the alert is dropped
 rather than retried early, since retrying before the limit clears only extends
-it. An alert that fails to send does not open a dedup window, so a webhook
-outage cannot silence a fault.
+it. An alert that fails to send — or is cancelled mid-send, by a timeout or at
+shutdown — does not open a dedup window, and occurrences collapsed into it while
+it was in flight are carried to the next alert, so a webhook outage cannot
+silence a fault.
 
 > The same behaviour is implemented independently in
 > [hibiki-discord](https://github.com/mateeyas/hibiki-discord). The two share no

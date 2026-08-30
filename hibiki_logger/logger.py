@@ -263,19 +263,28 @@ async def log_to_discord(
 
         from .discord_service import send_error_notification
 
-        delivered = await send_error_notification(
-            level=level,
-            message=message,
-            logger_name=logger_name,
-            webhook_url=_discord_webhook_url,
-            username=username,
-            trace=trace,
-            user_id=user_id,
-            path=path,
-            method=method,
-            suppressed_count=decision.suppressed,
-            dropped_count=decision.dropped,
-        )
+        try:
+            delivered = await send_error_notification(
+                level=level,
+                message=message,
+                logger_name=logger_name,
+                webhook_url=_discord_webhook_url,
+                username=username,
+                trace=trace,
+                user_id=user_id,
+                path=path,
+                method=method,
+                suppressed_count=decision.suppressed,
+                dropped_count=decision.dropped,
+            )
+        except BaseException:
+            # BaseException so cancellation is covered too: an alert
+            # cancelled mid-backoff, by a timeout or at shutdown, reached
+            # Discord no more than a failed one did. CancelledError would
+            # otherwise pass straight over the rollback below.
+            _get_discord_throttle().record_failure(decision)
+            raise
+
         if not delivered:
             # Nothing reached Discord, so this must not suppress the next
             # occurrence of the same fault.

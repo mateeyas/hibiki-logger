@@ -263,6 +263,48 @@ class TestFailedSends:
         recovered = throttle.check("ERROR", "d", "app.x")
         assert recovered.dropped == 10
 
+    def test_occurrences_during_the_send_are_not_lost(self):
+        """Repeats arriving while a send is in flight land on its window.
+
+        The send then fails, so those occurrences were neither delivered
+        nor reported. Rolling the window back must carry them forward
+        rather than discard them.
+        """
+        clock = FakeClock()
+        throttle = DiscordThrottle(dedup_window=300, max_per_minute=1000, clock=clock)
+        trace = make_trace()
+
+        in_flight = throttle.check("ERROR", "boom", "app.x", trace)
+        assert in_flight.send is True
+        for _ in range(9):
+            throttle.check("ERROR", "boom", "app.x", trace)
+
+        throttle.record_failure(in_flight)
+
+        recovered = throttle.check("ERROR", "boom", "app.x", trace)
+        assert recovered.send is True
+        assert recovered.suppressed == 9
+
+    def test_occurrences_during_the_send_merge_with_an_earlier_count(self):
+        clock = FakeClock()
+        throttle = DiscordThrottle(dedup_window=10, max_per_minute=1000, clock=clock)
+        trace = make_trace()
+
+        throttle.check("ERROR", "boom", "app.x", trace)
+        for _ in range(5):
+            throttle.check("ERROR", "boom", "app.x", trace)
+
+        clock.advance(11)
+        failed = throttle.check("ERROR", "boom", "app.x", trace)
+        assert failed.suppressed == 5
+        for _ in range(3):
+            throttle.check("ERROR", "boom", "app.x", trace)
+        throttle.record_failure(failed)
+
+        recovered = throttle.check("ERROR", "boom", "app.x", trace)
+        assert recovered.send is True
+        assert recovered.suppressed == 8
+
     def test_record_failure_ignores_a_no_send_decision(self):
         throttle = DiscordThrottle(dedup_window=300, max_per_minute=1)
         throttle.check("ERROR", "a", "app.x")

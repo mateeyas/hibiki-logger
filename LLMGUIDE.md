@@ -208,9 +208,11 @@ exactly; if it exceeds 30 seconds the alert is dropped rather than retried
 early, because retrying before the limit clears extends it. Plain exponential
 backoff is capped at 30 seconds.
 
-A send that fails does not open a dedup window — `record_failure` releases it —
-so a webhook outage cannot silence a fault for the window. The budget slot is
-kept, which bounds retry attempts to `LOG_DISCORD_MAX_PER_MINUTE`.
+A send that fails, or is cancelled, does not open a dedup window —
+`record_failure` releases it, and carries forward any occurrences collapsed
+into it while it was in flight — so a webhook outage cannot silence a fault for
+the window. The budget slot is kept, which bounds retry attempts to
+`LOG_DISCORD_MAX_PER_MINUTE`.
 
 The throttle is process-wide module state with no background task. Nothing needs
 starting or shutting down. Tests that assert on Discord sends should call

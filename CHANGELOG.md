@@ -5,6 +5,22 @@ All notable changes to Hibiki Logger will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.4.1] - 2026-08-30
+
+### Fixed
+
+- An alert cancelled mid-send — by a `wait_for` timeout, or at shutdown while a
+  retry was backing off — left its deduplication window open, silently
+  collapsing every later occurrence of that fault into an alert nobody
+  received. `CancelledError` is a `BaseException`, so it passed over the
+  rollback that a failed send triggers. This is the failure deduplication is
+  meant to prevent, so cancellation now rolls the window back like any other
+  undelivered send.
+- Occurrences arriving while a send was in flight were discarded if that send
+  then failed. They landed on the window the send had opened, and the rollback
+  replaced that window wholesale, so the repeats were neither delivered nor
+  counted in the next alert. They are now carried forward and reported.
+
 ## [1.4.0] - 2026-08-30
 
 ### Added

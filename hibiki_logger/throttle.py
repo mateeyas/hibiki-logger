@@ -203,8 +203,19 @@ class DiscordThrottle:
         if not decision.send or decision._key is None:
             return
 
+        # Occurrences that arrived while the send was in flight landed on
+        # the window the send opened. They were neither delivered nor
+        # reported, so they have to survive the rollback.
+        in_flight = self._windows.get(decision._key)
+        carried = in_flight.suppressed if in_flight is not None else 0
+
         if decision._previous_window is not None:
+            decision._previous_window.suppressed += carried
             self._windows[decision._key] = decision._previous_window
+        elif carried:
+            # No earlier window to restore. Backdate this one so it counts
+            # as expired and the next occurrence sends and reports them.
+            in_flight.opened_at = self._clock() - self.dedup_window
         else:
             self._windows.pop(decision._key, None)
 
