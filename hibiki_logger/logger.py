@@ -16,6 +16,7 @@ DISCORD_LOG_MIN_LEVEL = logging.ERROR
 _logger_namespace = "app"
 _discord_webhook_url: Optional[str] = None
 _discord_username: Optional[str] = None
+_discord_throttle = None
 
 _BASE_LOGGING_CONFIG = {
     "version": 1,
@@ -64,6 +65,7 @@ def configure_logging(
     _logger_namespace = namespace
     _discord_webhook_url = logging_config.LOG_DISCORD_WEBHOOK_URL
     _discord_username = logging_config.LOG_DISCORD_USERNAME
+    reset_discord_throttle()
 
     config = copy.deepcopy(_BASE_LOGGING_CONFIG)
     config["loggers"] = {}
@@ -191,6 +193,29 @@ async def log_error(
     )
 
 
+def _get_discord_throttle():
+    """Return the process-wide Discord throttle, creating it on first use.
+
+    Created lazily so it picks up configuration set after import.
+    """
+    global _discord_throttle
+    if _discord_throttle is None:
+        from .throttle import DiscordThrottle
+
+        _discord_throttle = DiscordThrottle()
+    return _discord_throttle
+
+
+def reset_discord_throttle():
+    """Discard deduplication and rate-limit state.
+
+    Called on reconfiguration so new settings take effect, and useful in
+    tests to keep one case's alerts from suppressing the next one's.
+    """
+    global _discord_throttle
+    _discord_throttle = None
+
+
 async def log_to_discord(
     level: str,
     message: str,
@@ -204,6 +229,10 @@ async def log_to_discord(
     """
     Send error notification to Discord if configured (non-blocking).
     Only sends logs at or above the configured minimum level (default: ERROR).
+
+    Alerts are deduplicated by fault signature and capped by a send budget;
+    see hibiki_logger.throttle. A collapsed or shed alert returns without
+    sending, and is reported as a count on a later send.
 
     Args:
         level: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
@@ -223,9 +252,18 @@ async def log_to_discord(
         return
 
     try:
+        decision = _get_discord_throttle().check(
+            level=level,
+            message=message,
+            logger_name=logger_name,
+            trace=trace,
+        )
+        if not decision.send:
+            return
+
         from .discord_service import send_error_notification
 
-        await send_error_notification(
+        delivered = await send_error_notification(
             level=level,
             message=message,
             logger_name=logger_name,
@@ -235,7 +273,13 @@ async def log_to_discord(
             user_id=user_id,
             path=path,
             method=method,
+            suppressed_count=decision.suppressed,
+            dropped_count=decision.dropped,
         )
+        if not delivered:
+            # Nothing reached Discord, so this must not suppress the next
+            # occurrence of the same fault.
+            _get_discord_throttle().record_failure(decision)
 
     except Exception as e:
         print(f"Error sending Discord error notification: {str(e)}")

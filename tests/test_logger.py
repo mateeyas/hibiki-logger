@@ -336,3 +336,170 @@ class TestNoDuplicateDBWrites:
             f"expected exactly one DB row, got {len(my_rows)}: "
             f"{[r.fields for r in my_rows]}"
         )
+
+
+class TestDiscordThrottlingEndToEnd:
+    """The behaviour the throttling exists for, exercised through log_to_discord."""
+
+    @pytest.mark.asyncio
+    async def test_error_loop_produces_a_bounded_number_of_sends(self, monkeypatch):
+        monkeypatch.setattr(
+            logger_module, "_discord_webhook_url", "https://discord.com/api/webhooks/test"
+        )
+        monkeypatch.setattr(logger_module, "DISCORD_LOG_MIN_LEVEL", logging.ERROR)
+
+        trace = (
+            "Traceback (most recent call last):\n"
+            '  File "/app/service.py", line 42, in handle\n'
+            "    process(order)\n"
+            "ValueError: failed to process order 1\n"
+        )
+
+        with patch(
+            "hibiki_logger.discord_service.send_error_notification",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as mock_send:
+            for _ in range(500):
+                await logger_module.log_to_discord(
+                    level="ERROR",
+                    message="failed to process order 1",
+                    logger_name="app.orders",
+                    trace=trace,
+                )
+
+        assert mock_send.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_varying_messages_from_one_fault_also_collapse(self, monkeypatch):
+        """Messages carry order ids, so only the traceback identifies the fault."""
+        monkeypatch.setattr(
+            logger_module, "_discord_webhook_url", "https://discord.com/api/webhooks/test"
+        )
+        monkeypatch.setattr(logger_module, "DISCORD_LOG_MIN_LEVEL", logging.ERROR)
+
+        with patch(
+            "hibiki_logger.discord_service.send_error_notification",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as mock_send:
+            for order_id in range(500):
+                await logger_module.log_to_discord(
+                    level="ERROR",
+                    message=f"failed to process order {order_id}",
+                    logger_name="app.orders",
+                    trace=(
+                        "Traceback (most recent call last):\n"
+                        '  File "/app/service.py", line 42, in handle\n'
+                        "    process(order)\n"
+                        f"ValueError: failed to process order {order_id}\n"
+                    ),
+                )
+
+        assert mock_send.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_suppression_count_is_passed_to_the_send(self, monkeypatch):
+        monkeypatch.setattr(
+            logger_module, "_discord_webhook_url", "https://discord.com/api/webhooks/test"
+        )
+        monkeypatch.setattr(logger_module, "DISCORD_LOG_MIN_LEVEL", logging.ERROR)
+
+        clock = [0.0]
+        from hibiki_logger.throttle import DiscordThrottle
+
+        monkeypatch.setattr(
+            logger_module,
+            "_discord_throttle",
+            DiscordThrottle(dedup_window=300, max_per_minute=1000, clock=lambda: clock[0]),
+        )
+
+        with patch(
+            "hibiki_logger.discord_service.send_error_notification",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as mock_send:
+            for _ in range(10):
+                await logger_module.log_to_discord(
+                    level="ERROR", message="boom", logger_name="app.x"
+                )
+            clock[0] += 301
+            await logger_module.log_to_discord(
+                level="ERROR", message="boom", logger_name="app.x"
+            )
+
+        assert mock_send.call_count == 2
+        assert mock_send.call_args[1]["suppressed_count"] == 9
+
+    @pytest.mark.asyncio
+    async def test_below_threshold_levels_never_reach_the_throttle(self, monkeypatch):
+        monkeypatch.setattr(
+            logger_module, "_discord_webhook_url", "https://discord.com/api/webhooks/test"
+        )
+        monkeypatch.setattr(logger_module, "DISCORD_LOG_MIN_LEVEL", logging.ERROR)
+
+        with patch(
+            "hibiki_logger.discord_service.send_error_notification",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as mock_send:
+            await logger_module.log_to_discord(
+                level="INFO", message="fine", logger_name="app.x"
+            )
+
+        assert mock_send.call_count == 0
+
+    @pytest.mark.asyncio
+    async def test_undelivered_alert_does_not_suppress_the_next(self, monkeypatch):
+        """A webhook outage must not silence the fault for the dedup window."""
+        monkeypatch.setattr(
+            logger_module, "_discord_webhook_url", "https://discord.com/api/webhooks/test"
+        )
+        monkeypatch.setattr(logger_module, "DISCORD_LOG_MIN_LEVEL", logging.ERROR)
+
+        from hibiki_logger.throttle import DiscordThrottle
+
+        monkeypatch.setattr(
+            logger_module,
+            "_discord_throttle",
+            DiscordThrottle(dedup_window=300, max_per_minute=1000),
+        )
+
+        with patch(
+            "hibiki_logger.discord_service.send_error_notification",
+            new_callable=AsyncMock,
+            return_value=False,  # webhook unreachable
+        ) as mock_send:
+            for _ in range(5):
+                await logger_module.log_to_discord(
+                    level="ERROR", message="db pool exhausted", logger_name="app.api"
+                )
+
+        assert mock_send.call_count == 5
+
+    @pytest.mark.asyncio
+    async def test_failed_attempts_stay_bounded_by_the_budget(self, monkeypatch):
+        monkeypatch.setattr(
+            logger_module, "_discord_webhook_url", "https://discord.com/api/webhooks/test"
+        )
+        monkeypatch.setattr(logger_module, "DISCORD_LOG_MIN_LEVEL", logging.ERROR)
+
+        from hibiki_logger.throttle import DiscordThrottle
+
+        monkeypatch.setattr(
+            logger_module,
+            "_discord_throttle",
+            DiscordThrottle(dedup_window=300, max_per_minute=4),
+        )
+
+        with patch(
+            "hibiki_logger.discord_service.send_error_notification",
+            new_callable=AsyncMock,
+            return_value=False,
+        ) as mock_send:
+            for _ in range(200):
+                await logger_module.log_to_discord(
+                    level="ERROR", message="db pool exhausted", logger_name="app.api"
+                )
+
+        assert mock_send.call_count == 4

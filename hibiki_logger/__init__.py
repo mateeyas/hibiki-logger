@@ -6,7 +6,8 @@ A logging package with console, database, and Discord notification support.
 Features:
 - Console logging (human-readable or JSON)
 - Database logging via SQLAlchemy (engine-agnostic; bring your own async driver)
-- Discord error notifications (via webhook URL)
+- Discord error notifications (via webhook URL), sent as embeds
+- Deduplication and rate limiting so an error loop cannot flood the webhook
 - Configurable log levels for each destination
 - Non-blocking async operations
 
@@ -22,7 +23,7 @@ Usage:
     logger.error("Something went wrong", exc_info=True)
 """
 
-__version__ = "1.3.1"
+__version__ = "1.4.0"
 
 from .logger import (
     configure_logging,
@@ -32,6 +33,7 @@ from .logger import (
     log_to_db,
     log_to_discord,
     log_error,
+    reset_discord_throttle,
 )
 
 __all__ = [
@@ -42,4 +44,5 @@ __all__ = [
     "log_to_db",
     "log_to_discord",
     "log_error",
+    "reset_discord_throttle",
 ]
