@@ -111,7 +111,8 @@ configure_logging(namespace="myapp", extra_loggers=["uvicorn", "fastapi"])
 | `get_logger` | `(name: str) -> logging.Logger` | Get a logger. Attaches DB/Discord handlers if name matches namespace. |
 | `add_context_to_logger` | `(logger, user_id=None, path=None, method=None) -> LoggerAdapter` | Wrap a logger with request context (stored in DB and Discord entries). |
 | `log_to_db` | `async (level, message, logger_name, user_id?, path?, method?, trace?)` | Manually write a log entry to the database. Respects `LOG_DB_MIN_LEVEL`. |
-| `log_to_discord` | `async (level, message, logger_name, trace?, user_id?, path?, method?, username?)` | Manually send a Discord notification. Respects `LOG_DISCORD_MIN_LEVEL`. |
+| `log_to_discord` | `async (level, message, logger_name, trace?, user_id?, path?, method?, username?)` | Manually send a Discord notification. Respects `LOG_DISCORD_MIN_LEVEL`, deduplication, and the send budget. Returns without sending if the alert is collapsed or shed. |
+| `reset_discord_throttle` | `() -> None` | Discard Discord deduplication and rate-limit state. Called automatically by `configure_logging`; useful in tests. |
 | `log_error` | `async (error, logger_name, message?, user_id?, path?, method?)` | Log an exception to DB with auto-extracted traceback. |
 
 ### Internal helpers (test use)
@@ -183,6 +184,34 @@ Using `logger.error(...)` via `get_logger` does NOT require await -- the handler
 | `LOG_DISCORD_WEBHOOK_URL` | *(none)* | Discord webhook URL for error notifications. |
 | `LOG_DISCORD_USERNAME` | *(none)* | Display name for Discord webhook messages. Defaults to `"Hibiki Error Bot"` when unset. |
 | `LOG_DISCORD_MIN_LEVEL` | `ERROR` | Minimum level for Discord notifications. Same options as `LOG_CONSOLE_MIN_LEVEL`. |
+| `LOG_DISCORD_EMBED` | `true` | Send Discord alerts as embeds. Set `false` for the pre-1.4.0 plain-text rendering. Accepts `1/0`, `true/false`, `yes/no`, `on/off`. |
+| `LOG_DISCORD_DEDUP_WINDOW` | `300` | Seconds an identical fault is collapsed into a single alert. |
+| `LOG_DISCORD_MAX_PER_MINUTE` | `30` | Webhook send budget over a sliding 60 second window. Excess is dropped and counted. |
+
+### Discord throttling
+
+Discord alerts pass through `hibiki_logger.throttle.DiscordThrottle` before
+reaching the webhook. Two stages, in order:
+
+1. **Deduplication.** Alerts sharing a fault signature within
+   `LOG_DISCORD_DEDUP_WINDOW` collapse into one. The signature is exception type
+   plus innermost frame when a traceback is present, falling back to logger name
+   plus message. The suppressed count is reported in the footer of the next
+   alert for that signature.
+2. **Send budget.** `LOG_DISCORD_MAX_PER_MINUTE` caps sends over a sliding 60
+   second window. Excess alerts are dropped and counted, not queued; the count
+   is reported on the next successful send.
+
+429 responses are retried honouring `Retry-After` with bounded exponential
+backoff (4 attempts, capped at 30 seconds).
+
+The throttle is process-wide module state with no background task. Nothing needs
+starting or shutting down. Tests that assert on Discord sends should call
+`reset_discord_throttle()` between cases, otherwise an identical alert from an
+earlier test suppresses the next one.
+
+Alerts dropped by either stage are still written to the database by the DB
+handler — Discord is the notification channel, not the record.
 
 Environment variables are read once when `hibiki_logger.config` is imported and stored on `LoggingConfig`. `setup_db_logging` reads from that in-memory config when it computes DB and Discord level thresholds — changing env vars after import has no effect unless `hibiki_logger.config` is reloaded.
 

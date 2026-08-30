@@ -86,8 +86,52 @@ Not using SQLAlchemy? Use the raw DDL from `from hibiki_logger.models import LOG
 | `LOG_CONSOLE_MIN_LEVEL`   | `INFO`        | Minimum level for console output                                 |
 | `LOG_DB_MIN_LEVEL`        | `WARNING`     | Minimum level saved to DB                                        |
 | `LOG_DISCORD_MIN_LEVEL`   | `ERROR`       | Minimum level sent to Discord                                    |
+| `LOG_DISCORD_EMBED`       | `true`        | Send Discord alerts as embeds rather than plain text             |
+| `LOG_DISCORD_DEDUP_WINDOW`| `300`         | Seconds an identical fault is collapsed into one alert           |
+| `LOG_DISCORD_MAX_PER_MINUTE` | `30`       | Webhook send budget per sliding 60 seconds                       |
 
 > **Tip:** Use `LOG_CONSOLE_FORMAT=json` in production for structured logging compatible with log aggregators.
+
+### Discord throttling
+
+Discord rate limits webhooks at roughly 5 requests per 2 seconds. Without
+throttling, a crash loop produces one alert per request, exceeds the limit, and
+loses alerts silently — the alerting fails exactly when you need it. Two
+mechanisms run on the send path, in order:
+
+**Deduplication.** Alerts sharing a fault signature inside `LOG_DISCORD_DEDUP_WINDOW`
+collapse into one. The signature comes from the traceback where there is one —
+exception type plus innermost frame — and falls back to logger name and message
+where there is not. Keying on the traceback matters: messages routinely embed
+request ids, so `failed to process order 8831` would otherwise be a distinct
+alert on every occurrence. The number collapsed is reported on the next alert for
+that signature ("142 further occurrences suppressed.").
+
+**Send budget.** `LOG_DISCORD_MAX_PER_MINUTE` caps sends over a sliding 60 second
+window. Alerts beyond the budget are dropped and counted, and the count is
+reported on the next successful send. They are dropped rather than queued
+because Discord is the notification channel, not the record — every log record
+is still written to the database by the DB handler. There is no background
+worker and nothing to shut down.
+
+429 responses are retried, honouring Discord's `Retry-After` with bounded
+exponential backoff.
+
+> The same behaviour is implemented independently in
+> [hibiki-discord](https://github.com/mateeyas/hibiki-discord). The two share no
+> code, so a fix to throttling or embed formatting in one is usually worth
+> applying to the other.
+
+### Discord embeds
+
+Errors are sent as embeds by default, coloured by level (WARNING amber, ERROR
+red, CRITICAL dark red), with `logger_name`, `user_id`, `path`, and `method` as
+fields where they are set. Tracebacks go in the description, truncated from the
+middle so the exception line and innermost frames survive. Suppression counts go
+in the footer.
+
+Set `LOG_DISCORD_EMBED=false` for the previous plain-text rendering. If embed
+construction ever fails the alert still goes out as plain text.
 
 ### Namespace
 
@@ -127,7 +171,7 @@ logger.error("User creation failed")
 
 ### Manual Discord notifications
 
-Standard logging calls (`logger.error(...)`) send Discord notifications in the background automatically. Your code is never blocked. If you need to send a Discord message explicitly and confirm it was delivered, await `log_to_discord()` directly:
+Standard logging calls (`logger.error(...)`) send Discord notifications in the background automatically. Your code is never blocked. To send one explicitly, await `log_to_discord()` directly:
 
 ```python
 from hibiki_logger import log_to_discord
@@ -139,6 +183,11 @@ await log_to_discord(
     user_id="123",
 )
 ```
+
+Awaiting it waits for the send path to finish, but does not guarantee an alert
+reached Discord: the call returns without sending if the alert is collapsed into
+a recent identical one or shed by the send budget. See
+[Discord throttling](#discord-throttling).
 
 ## Framework integration
 
@@ -161,6 +210,8 @@ async def lifespan(app: FastAPI):
 **Logs not appearing in database** — verify `setup_db_logging()` was called, the logger name matches the namespace, and `LOG_DB_MIN_LEVEL` allows the level.
 
 **Discord notifications not sending** — verify `LOG_DISCORD_WEBHOOK_URL` is set and `LOG_DISCORD_MIN_LEVEL` allows the level.
+
+**Fewer Discord alerts than expected** — this is usually deduplication working. Repeats of the same fault collapse for `LOG_DISCORD_DEDUP_WINDOW` seconds and are counted in the footer of the next alert for that fault. Alerts shed by `LOG_DISCORD_MAX_PER_MINUTE` are counted the same way. The database log table always has the full record.
 
 ## License
 
