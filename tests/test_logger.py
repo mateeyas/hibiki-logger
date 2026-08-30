@@ -432,6 +432,50 @@ class TestDiscordThrottlingEndToEnd:
         assert mock_send.call_args[1]["suppressed_count"] == 9
 
     @pytest.mark.asyncio
+    async def test_cancelled_send_does_not_suppress_the_next_alert(self, monkeypatch):
+        """Cancellation reaches Discord no more than a failed send does.
+
+        CancelledError is a BaseException, so without an explicit rollback
+        it passes straight over record_failure, and the dedup window stays
+        open on an alert nobody received.
+        """
+        monkeypatch.setattr(
+            logger_module, "_discord_webhook_url", "https://discord.com/api/webhooks/test"
+        )
+        monkeypatch.setattr(logger_module, "DISCORD_LOG_MIN_LEVEL", logging.ERROR)
+
+        from hibiki_logger.throttle import DiscordThrottle
+
+        monkeypatch.setattr(
+            logger_module,
+            "_discord_throttle",
+            DiscordThrottle(dedup_window=300, max_per_minute=1000),
+        )
+
+        async def cancelled(*args, **kwargs):
+            raise asyncio.CancelledError()
+
+        with patch(
+            "hibiki_logger.discord_service.send_error_notification",
+            side_effect=cancelled,
+        ):
+            with pytest.raises(asyncio.CancelledError):
+                await logger_module.log_to_discord(
+                    level="ERROR", message="boom", logger_name="app.x"
+                )
+
+        with patch(
+            "hibiki_logger.discord_service.send_error_notification",
+            new_callable=AsyncMock,
+            return_value=True,
+        ) as mock_send:
+            await logger_module.log_to_discord(
+                level="ERROR", message="boom", logger_name="app.x"
+            )
+
+        assert mock_send.call_count == 1
+
+    @pytest.mark.asyncio
     async def test_below_threshold_levels_never_reach_the_throttle(self, monkeypatch):
         monkeypatch.setattr(
             logger_module, "_discord_webhook_url", "https://discord.com/api/webhooks/test"
