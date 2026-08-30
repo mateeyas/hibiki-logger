@@ -11,6 +11,9 @@ logger = logging.getLogger("hibiki_logger.discord")
 # Discord caps `content` at 2000 characters.
 CONTENT_LIMIT = 2000
 
+# Plain-text alerts are rendered below the cap, leaving headroom.
+PLAIN_TEXT_LIMIT = 1900
+
 # 429 and 5xx responses are retried. The ceiling keeps a wedged webhook
 # from holding the calling task open indefinitely.
 MAX_SEND_ATTEMPTS = 4
@@ -209,10 +212,17 @@ def _plain_text_alert(
         text += f"\n**Trace:**\n```\n{truncate_middle(trace, 800)}\n```"
 
     footer = build_footer(suppressed_count, dropped_count)
-    if footer:
-        text += f"\n_{footer}_"
+    if not footer:
+        return truncate_end(text, PLAIN_TEXT_LIMIT)
 
-    return truncate_end(text, 1900)
+    # The body is trimmed to leave room for the note rather than letting
+    # the whole string be truncated, which would cut the note off the end
+    # -- losing precisely the line saying this one alert stands for many.
+    # Reachable when the context fields are large: message and trace are
+    # capped above, but logger_name, path, method and user_id are not.
+    note = f"\n_{footer}_"
+    body = truncate_end(text, max(PLAIN_TEXT_LIMIT - len(note), 0))
+    return f"{body}{note}"
 
 
 async def send_error_notification(

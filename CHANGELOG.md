@@ -16,6 +16,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   rollback that a failed send triggers. This is the failure deduplication is
   meant to prevent, so cancellation now rolls the window back like any other
   undelivered send.
+- A plain-text alert (`LOG_DISCORD_EMBED=false`) appended the suppression count
+  and then truncated the whole message, so a large request context could cut off
+  precisely the line saying the alert stood for many occurrences. The message
+  and traceback are capped inside the renderer, but `logger_name`, `path`,
+  `method` and `user_id` are not, and roughly 450 characters of `path` was
+  enough to lose the count. The body is now trimmed to leave room for it.
 - Occurrences arriving while a send was in flight were discarded if that send
   then failed. They landed on the window the send had opened, and the rollback
   replaced that window wholesale, so the repeats were neither delivered nor
