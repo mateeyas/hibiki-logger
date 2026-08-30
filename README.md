@@ -86,9 +86,13 @@ Not using SQLAlchemy? Use the raw DDL from `from hibiki_logger.models import LOG
 | `LOG_CONSOLE_MIN_LEVEL`   | `INFO`        | Minimum level for console output                                 |
 | `LOG_DB_MIN_LEVEL`        | `WARNING`     | Minimum level saved to DB                                        |
 | `LOG_DISCORD_MIN_LEVEL`   | `ERROR`       | Minimum level sent to Discord                                    |
-| `LOG_DISCORD_EMBED`       | `true`        | Send Discord alerts as embeds rather than plain text             |
-| `LOG_DISCORD_DEDUP_WINDOW`| `300`         | Seconds an identical fault is collapsed into one alert           |
-| `LOG_DISCORD_MAX_PER_MINUTE` | `30`       | Webhook send budget per sliding 60 seconds                       |
+| `LOG_DISCORD_EMBED`          | `true`     | Send Discord alerts as embeds rather than plain text             |
+| `LOG_DISCORD_DEDUP_WINDOW`   | `300`      | Seconds an identical fault is collapsed into a single alert      |
+| `LOG_DISCORD_MAX_PER_MINUTE` | `30`       | Webhook send budget over a sliding 60 seconds                    |
+
+All variables are optional and have working defaults; upgrading requires no
+configuration changes. Discord notifications remain off entirely unless
+`LOG_DISCORD_WEBHOOK_URL` is set.
 
 > **Tip:** Use `LOG_CONSOLE_FORMAT=json` in production for structured logging compatible with log aggregators.
 
