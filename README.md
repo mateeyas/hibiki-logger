@@ -133,6 +133,19 @@ silence a fault.
 > code, so a fix to throttling or embed formatting in one is usually worth
 > applying to the other.
 
+### Discord mentions
+
+Every payload sets `allowed_mentions: {"parse": []}`, so Discord does not resolve
+`@everyone`, `@here`, or role mentions in an alert. Alert text is caller-supplied
+and error messages routinely echo user input, so an attacker who can trigger an
+error containing their own text would otherwise ping the whole alerting channel
+— during an incident, on every occurrence.
+
+This applies to mentions written into an alert deliberately, too: the text is
+unchanged and still renders as written, but Discord is told not to resolve it.
+There is no setting to opt back in. Embeds were never affected, because Discord
+does not resolve mentions inside them.
+
 ### Discord embeds
 
 Errors are sent as embeds by default, coloured by level (WARNING amber, ERROR

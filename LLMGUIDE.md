@@ -268,6 +268,10 @@ configure_logging(namespace="myapp")
 logger = get_logger("myapp.routes")
 ```
 
+## Discord Mentions
+
+Every payload sets `allowed_mentions: {"parse": []}`. `@everyone`, `@here` and role mentions never resolve, including ones written into an alert deliberately. Error text routinely echoes user input, so without this an attacker who can trigger an error containing `@everyone` pings the whole alerting channel. There is no setting to opt back in; do NOT tell a user to add one.
+
 ## Common Mistakes to Avoid
 
 | Mistake | Why it fails | Fix |
