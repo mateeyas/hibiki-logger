@@ -139,7 +139,13 @@ async def send_discord_notification(
         logger.warning("Discord notification has neither content nor embed")
         return False
 
-    payload: dict = {}
+    payload: dict = {
+        # Alert text is caller-supplied and error messages routinely echo
+        # user input, and Discord resolves mentions in webhook content: an
+        # error containing "@everyone" would otherwise ping the alerting
+        # channel, during an incident, on every occurrence.
+        "allowed_mentions": {"parse": []},
+    }
     if message:
         payload["content"] = truncate_end(message, CONTENT_LIMIT)
     if embed:

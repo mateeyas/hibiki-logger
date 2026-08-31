@@ -5,6 +5,28 @@ All notable changes to Hibiki Logger will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.5.0] - 2026-09-01
+
+### Security
+
+- Every Discord webhook payload now sets `allowed_mentions: {"parse": []}`.
+  Alert text is interpolated from caller-supplied values and error messages
+  routinely echo user input, and Discord resolves mentions in webhook
+  `content`, so an attacker who could trigger an error containing `@everyone`
+  or `@here` got a channel-wide ping on the alerting channel — during an
+  incident, on every occurrence. Embeds were never exposed: Discord does not
+  resolve mentions inside them, so only the plain-text path
+  (`LOG_DISCORD_EMBED=false`) carried this.
+
+  **Behaviour change:** mentions placed in an alert *deliberately* stop
+  pinging too. Text is unchanged and still renders as written; Discord is
+  simply told not to resolve it. There is no opt-out. If you relied on an
+  alert pinging a role or channel, that no longer happens.
+
+  The JavaScript port
+  ([hibiki-js](https://github.com/mateeyas/hibiki-js), `packages/discord`)
+  has always set this; hibiki-discord takes the same change in its 3.0.0.
+
 ## [1.4.1] - 2026-08-30
 
 ### Fixed

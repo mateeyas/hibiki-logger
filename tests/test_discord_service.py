@@ -217,10 +217,12 @@ class FakeSession:
     def __init__(self, responses):
         self._responses = list(responses)
         self.post_count = 0
+        self.payloads = []
 
     def post(self, *args, **kwargs):
         response = self._responses[min(self.post_count, len(self._responses) - 1)]
         self.post_count += 1
+        self.payloads.append(kwargs.get("json"))
         return FakePostContext(response)
 
     async def __aenter__(self):
@@ -268,6 +270,30 @@ class TestPlainTextFooter:
         alert = self._alert(path_length=800, suppressed_count=0)
         assert len(alert) <= 1900
         assert "suppressed" not in alert
+
+
+class TestMentionSuppression:
+    @pytest.mark.asyncio
+    async def test_payload_suppresses_mentions(self):
+        """Error text routinely echoes user input, so it must not ping.
+
+        An attacker who can trigger an error containing their own text
+        would otherwise ping the whole alerting channel, during an
+        incident, on every occurrence.
+        """
+        session = FakeSession([FakeResponse(204)])
+
+        with patch("aiohttp.ClientSession", return_value=session):
+            result = await send_discord_notification(
+                message="ValueError: bad input from @everyone",
+                webhook_url="https://example.com/webhook",
+            )
+
+        assert result is True
+        payload = session.payloads[0]
+        assert payload["allowed_mentions"] == {"parse": []}
+        # The text is untouched; Discord is told not to resolve it.
+        assert payload["content"] == "ValueError: bad input from @everyone"
 
 
 class TestRateLimitHandling:
